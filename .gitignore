@@ -1,0 +1,9 @@
+.tools/
+target/
+node_modules/
+web/dist/
+var/
+.env
+*.log
+test-results/
+playwright-report/

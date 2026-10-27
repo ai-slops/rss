@@ -82,7 +82,7 @@ All intent spacing derives from a 4px base.
 
 Other geometry tokens: `--radius-control: 0.25rem`, `--radius-panel: 0.375rem`, `--control-min: 2.25rem`, `--control-comfortable: 2.75rem`, `--header-size: 3rem`, `--operations-size: 15.5rem`, `--rail-size: 3.25rem`.
 
-The desktop workspace is a `scroll-body-shell`: header fixed, production grid bounded, lower operations band fixed within the shell, and each list/panel owns its own named scroll. The production grid is scenes/layers | Preview and Program | inspector. At widths below 1100px the inspector becomes a drawer and video panes remain side by side. Below 760px the app becomes a focused single-pane viewer/editor with an explicit pane switcher; full canvas drag editing is not promised. At 375px primary content reflows with no page-level horizontal scroll. Setup pages retain a compact Program monitor.
+The desktop workspace is a `scroll-body-shell`: header, notice stack, production grid and operations band occupy explicit grid rows; an empty notice stack must not move production into an auto-sized row. Each list/panel owns its named scroll. The production grid is scenes/layers | Preview and Program | inspector. Below 1100px the Inspector remains keyboard-reachable in a full-width row below the monitors. Below 760px monitors and Inspector stack vertically; full mobile canvas drag editing is not promised, but numeric alternatives remain available. Short desktop viewports permit document scrolling instead of clipping fixed regions, including at 200% zoom. At 375px primary content reflows with no page-level horizontal scroll. Operator-assigned names wrap naturally rather than becoming an empty ellipsis.
 
 ## 5. Components
 

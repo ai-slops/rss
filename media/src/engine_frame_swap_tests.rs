@@ -65,6 +65,9 @@ fn timeout_before_any_frame_cannot_apply_a_later_hidden_take() -> anyhow::Result
     fixture.pipeline.set_state(gst::State::Paused)?;
     let (_, state, _) = fixture.pipeline.state(gst::ClockTime::from_seconds(2));
     assert_eq!(state, gst::State::Paused);
+    fixture.compositor.set_state(gst::State::Ready)?;
+    let (_, state, _) = fixture.compositor.state(gst::ClockTime::from_seconds(2));
+    assert_eq!(state, gst::State::Ready);
     let mut swap = FrameSwap::arm(
         &fixture.compositor,
         vec![PadChange::hidden(fixture.pad("sink_0")?)],

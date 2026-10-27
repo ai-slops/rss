@@ -10,6 +10,9 @@ fn failed_timing_boundary_cannot_apply_after_program_resumes() -> anyhow::Result
     fixture.pipeline.set_state(gst::State::Paused)?;
     let (_, state, _) = fixture.pipeline.state(gst::ClockTime::from_seconds(2));
     assert_eq!(state, gst::State::Paused);
+    fixture.compositor.set_state(gst::State::Ready)?;
+    let (_, state, _) = fixture.compositor.state(gst::ClockTime::from_seconds(2));
+    assert_eq!(state, gst::State::Ready);
     let control = Arc::new(TimingControl::default());
 
     // When the transaction fails before a Program buffer can arrive.

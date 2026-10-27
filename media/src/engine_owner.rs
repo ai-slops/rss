@@ -7,12 +7,14 @@ use gstreamer as gst;
 use uuid::Uuid;
 
 use crate::engine::{EngineConfig, EngineError, EngineRequest};
-use crate::engine_composition::CompositionLayerRuntime;
-use crate::engine_sources::SourceRuntime;
+use crate::engine_composition::CompositionState;
+use crate::engine_source_runtime::SourceRuntime;
 use crate::protocol::{
     Command, CommandId, CommandKind, EngineEvent, EngineRunId, EventKind, Nanoseconds, OutputId,
     OutputObservedState, ProgramRevision, ScenePlacement, Sequence, TrackId,
 };
+
+const ENGINE_RUN_TOKEN: &str = concat!("{", "engine_run_id", "}");
 
 #[derive(Debug, Clone)]
 pub struct OutputControl {
@@ -30,14 +32,15 @@ pub struct OwnerState {
     pub prepared: Option<(ProgramRevision, Vec<ScenePlacement>)>,
     pub prepared_composition: Option<(ProgramRevision, Vec<crate::protocol::CompositionPlacement>)>,
     pub program_revision: Option<ProgramRevision>,
-    pub preview_layers: Vec<CompositionLayerRuntime>,
-    pub program_layers: Vec<CompositionLayerRuntime>,
+    pub preview_layers: CompositionState,
+    pub program_layers: CompositionState,
     pub tracks: HashMap<TrackId, String>,
     pub track_history: HashMap<TrackId, String>,
     pub timing_controls:
         HashMap<TrackId, std::sync::Arc<crate::engine_source_progress::TimingControl>>,
     pub video_tees: HashMap<TrackId, String>,
     pub audio_routes: HashMap<TrackId, String>,
+    pub mix_settings: HashMap<TrackId, crate::protocol::AudioMixRoute>,
     pub sources: HashMap<crate::protocol::SourceId, SourceRuntime>,
 }
 
@@ -56,7 +59,14 @@ pub fn owner_thread(
         stop_pipeline(&owner.pipeline);
         return;
     }
-    while let Ok(request) = receiver.recv() {
+    loop {
+        owner.preview_layers.maintain();
+        owner.program_layers.maintain();
+        let request = match receiver.recv_timeout(std::time::Duration::from_millis(25)) {
+            Ok(request) => request,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
         let shutdown = matches!(request.command.kind, CommandKind::Shutdown);
         let event = owner.handle(request.command);
         if request.response_sender.send(event).is_err() || shutdown {
@@ -72,12 +82,19 @@ fn setup_owner(config: &EngineConfig) -> Result<OwnerState, EngineError> {
         .map_err(|error| EngineError::Gstreamer(error.to_string()))?;
     let description = config
         .pipeline_description
-        .replace("{engine_run_id}", engine_run_id.as_str());
+        .replace(ENGINE_RUN_TOKEN, engine_run_id.as_str());
     let element = gst::parse::launch(&description)
         .map_err(|error| EngineError::Gstreamer(error.to_string()))?;
     let pipeline = element
         .downcast::<gst::Pipeline>()
         .map_err(|_| EngineError::Gstreamer("description did not produce a Pipeline".to_owned()))?;
+    crate::engine_clock_pad::attach(&pipeline).map_err(EngineError::Gstreamer)?;
+    if let Some(pad) = pipeline
+        .by_name("program_video_tap")
+        .and_then(|tap| tap.static_pad("sink"))
+    {
+        crate::tap_timing::tag(&pad, &engine_run_id).map_err(EngineError::Gstreamer)?;
+    }
     pipeline
         .set_state(gst::State::Playing)
         .map_err(|error| EngineError::Gstreamer(format!("start pipeline: {error:?}")))?;
@@ -104,13 +121,14 @@ fn setup_owner(config: &EngineConfig) -> Result<OwnerState, EngineError> {
         prepared: None,
         prepared_composition: None,
         program_revision: None,
-        preview_layers: Vec::new(),
-        program_layers: Vec::new(),
+        preview_layers: CompositionState::new("preview_compositor"),
+        program_layers: CompositionState::new("program_compositor"),
         tracks: config.tracks.iter().cloned().collect(),
         track_history: HashMap::new(),
         timing_controls: HashMap::new(),
         video_tees: HashMap::new(),
         audio_routes: config.audio_routes.iter().cloned().collect(),
+        mix_settings: HashMap::new(),
         sources: HashMap::new(),
     })
 }

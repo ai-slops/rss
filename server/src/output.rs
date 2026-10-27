@@ -27,7 +27,8 @@ pub(crate) fn register(
                 &state_directory.join("recordings").join(&output.id.0),
                 Duration::from_secs(u64::from(*segment_seconds)),
             )
-            .map_err(invalid)?,
+            .map_err(invalid)?
+            .with_engine_run_id(engine_run_id),
         ),
         OutputAdapter::SourceRecording {
             source_id,
@@ -63,7 +64,8 @@ pub(crate) fn register(
                     &state_directory.join("recordings").join(&output.id.0),
                     Duration::from_secs(u64::from(*segment_seconds)),
                 )
-                .map_err(invalid)?,
+                .map_err(invalid)?
+                .with_engine_run_id(engine_run_id),
             )
         }
         OutputAdapter::Rtmps { destination_id } => {

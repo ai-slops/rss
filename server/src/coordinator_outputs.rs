@@ -36,8 +36,9 @@ impl Owner {
             ));
         }
         let id = media_output_id(&command.target_id)?;
+        let (_, _, clock) = self.media.runtime_snapshot()?;
         self.outputs
-            .start(&id)
+            .start_with_clock(&id, Some(clock))
             .map_err(|error| AppError::Unavailable(error.to_string()))?;
         self.refresh_output(&command.target_id);
         Ok(applied())
@@ -106,6 +107,10 @@ impl Owner {
                 tap_point: tap_point(&output.adapter).into(),
                 start_ns: segment.start_ns.to_string(),
                 end_ns: Some(segment.end_ns.to_string()),
+                engine_run_id: segment.engine_run_id,
+                media_start_ns: segment.media_start_ns.map(|value| value.to_string()),
+                media_end_ns: segment.media_end_ns.map(|value| value.to_string()),
+                media_uncertainty_ns: segment.media_uncertainty_ns.map(|value| value.to_string()),
                 bytes: segment.bytes.to_string(),
                 validation: if segment.decoded {
                     "decoded"

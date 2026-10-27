@@ -93,6 +93,12 @@ async fn coordinator_source_scene_take_and_recording_drive_real_program_media() 
         "connected"
     );
     assert_eq!(final_snapshot["program"]["health"], "healthy");
+    assert!(
+        final_snapshot["engineClock"]["mediaTime"].is_string(),
+        "{final_snapshot}"
+    );
+    assert!(final_snapshot["engineClock"]["wallTime"].is_string());
+    assert!(final_snapshot["engineClock"]["uncertainty"].is_string());
     let recordings = final_snapshot["recordings"].as_array().expect("recordings");
     assert!(recordings.len() >= 2, "{recordings:?}");
     assert!(

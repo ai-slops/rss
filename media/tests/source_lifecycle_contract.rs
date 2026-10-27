@@ -80,6 +80,8 @@ fn source_reconnect_preserves_ids_and_opens_new_continuity_generation() -> anyho
     assert_eq!(source.id, source_id);
     assert_eq!(source.continuity_generation.value(), 2);
     assert_eq!(source.gaps.len(), 1);
+    assert_eq!(source.video_delay.value(), 250);
+    assert_eq!(source.audio_delay.value(), 0);
     Ok(())
 }
 
@@ -101,6 +103,7 @@ fn srt_source_rejects_unscoped_passphrase_before_graph_mutation() -> anyhow::Res
                 video_track_id: TrackId::new("remote-a-video")?,
                 audio_track_id: TrackId::new("remote-a-audio")?,
                 kind: SourceKind::SrtListener {
+                    bind_address: "127.0.0.1".to_owned(),
                     port: 9100,
                     latency: Milliseconds::new(120),
                     passphrase: "short".to_owned(),
@@ -150,6 +153,7 @@ fn rejected_source_configuration_keeps_previous_generation_running() -> anyhow::
                 video_track_id,
                 audio_track_id,
                 kind: SourceKind::SrtListener {
+                    bind_address: "127.0.0.1".to_owned(),
                     port: 9_100,
                     latency: Milliseconds::new(120),
                     passphrase: "short".to_owned(),

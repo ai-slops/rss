@@ -20,6 +20,10 @@ impl TimingControl {
     pub fn set_offset(&self, value: i64) {
         self.0.store(value, Ordering::Relaxed);
     }
+
+    pub fn offset(&self) -> i64 {
+        self.0.load(Ordering::Relaxed)
+    }
 }
 
 pub fn add_timing_probe(
@@ -72,12 +76,12 @@ pub fn add_timestamp_normalizer(
         let Some(buffer) = info.buffer_mut() else {
             return gst::PadProbeReturn::Ok;
         };
-        let pts = buffer.pts().map_or(0, |value| value.nseconds());
+        let pts = buffer.pts().map_or(0, gst::ClockTime::nseconds);
         let current = offset.load(Ordering::Relaxed);
         let current = if current == i64::MIN {
             let running = pipeline
                 .current_running_time()
-                .map_or(0, |value| value.nseconds());
+                .map_or(0, gst::ClockTime::nseconds);
             let calculated = i64::try_from(running)
                 .unwrap_or(i64::MAX)
                 .saturating_sub(i64::try_from(pts).unwrap_or(i64::MAX));
@@ -108,6 +112,11 @@ impl TrackProgress {
 
     pub fn last_activity_ns(&self) -> u64 {
         self.last_activity_ns.load(Ordering::Relaxed)
+    }
+
+    pub fn last_pts_ns(&self) -> Option<u64> {
+        let value = self.last_pts_ns.load(Ordering::Relaxed);
+        (value != 0).then_some(value)
     }
 }
 

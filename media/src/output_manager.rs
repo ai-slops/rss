@@ -4,6 +4,7 @@ use std::{
     thread::JoinHandle,
 };
 
+use crate::protocol::EngineClockMapping;
 use crate::{
     output::{OutputDefinition, OutputError, OutputId, OutputSnapshot, RecordingSegment},
     output_owner::{OwnerCommand, SharedOutput, SpawnedOwner, spawn_owner},
@@ -51,7 +52,20 @@ impl OutputManager {
     }
 
     pub fn start(&self, id: &OutputId) -> Result<(), OutputError> {
-        self.request(id, OwnerCommand::start)
+        self.start_with_clock(id, None)
+    }
+
+    pub fn start_with_clock(
+        &self,
+        id: &OutputId,
+        clock: Option<EngineClockMapping>,
+    ) -> Result<(), OutputError> {
+        let sender = self.sender(id)?;
+        let (reply, response) = mpsc::sync_channel(1);
+        sender
+            .send(OwnerCommand::Start { clock, reply })
+            .map_err(|_| OutputError::OwnerStopped)?;
+        response.recv().map_err(|_| OutputError::OwnerStopped)?
     }
 
     pub fn stop(&self, id: &OutputId) -> Result<(), OutputError> {
@@ -128,6 +142,15 @@ impl OutputManager {
             .send(command(reply))
             .map_err(|_| OutputError::OwnerStopped)?;
         response.recv().map_err(|_| OutputError::OwnerStopped)?
+    }
+
+    fn sender(&self, id: &OutputId) -> Result<mpsc::Sender<OwnerCommand>, OutputError> {
+        self.owners
+            .lock()
+            .map_err(|_| OutputError::OwnerStopped)?
+            .get(id)
+            .map(|owner| owner.sender.clone())
+            .ok_or(OutputError::UnknownOutput)
     }
 
     fn shared(&self, id: &OutputId) -> Result<Arc<Mutex<SharedOutput>>, OutputError> {

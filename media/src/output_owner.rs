@@ -4,6 +4,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::protocol::EngineClockMapping;
 use crate::{
     output::{OutputDefinition, OutputError, OutputSnapshot, OutputState, RecordingSegment},
     output_catalog,
@@ -19,7 +20,10 @@ pub struct SharedOutput {
 }
 
 pub enum OwnerCommand {
-    Start(mpsc::SyncSender<Result<(), OutputError>>),
+    Start {
+        clock: Option<EngineClockMapping>,
+        reply: mpsc::SyncSender<Result<(), OutputError>>,
+    },
     Stop(mpsc::SyncSender<Result<(), OutputError>>),
     Shutdown(mpsc::SyncSender<Result<(), OutputError>>),
 }
@@ -31,10 +35,6 @@ pub struct SpawnedOwner {
 }
 
 impl OwnerCommand {
-    pub const fn start(reply: mpsc::SyncSender<Result<(), OutputError>>) -> Self {
-        Self::Start(reply)
-    }
-
     pub const fn stop(reply: mpsc::SyncSender<Result<(), OutputError>>) -> Self {
         Self::Stop(reply)
     }
@@ -80,13 +80,13 @@ fn owner_loop(
     let mut retry_at: Option<Instant> = None;
     loop {
         match receiver.recv_timeout(OWNER_TICK) {
-            Ok(OwnerCommand::Start(reply)) => {
+            Ok(OwnerCommand::Start { clock, reply }) => {
                 if active.is_some() || retry_at.is_some() {
                     let _ = reply.send(Ok(()));
                     continue;
                 }
                 set_starting(shared);
-                match ActivePipeline::start(definition) {
+                match ActivePipeline::start(definition, clock.as_ref()) {
                     Ok(pipeline) => {
                         active = Some(pipeline);
                         let _ = reply.send(Ok(()));
@@ -133,7 +133,7 @@ fn owner_loop(
         }
         if retry_at.is_some_and(|deadline| Instant::now() >= deadline) {
             set_starting(shared);
-            match ActivePipeline::start(definition) {
+            match ActivePipeline::start(definition, None) {
                 Ok(pipeline) => {
                     active = Some(pipeline);
                     retry_at = None;

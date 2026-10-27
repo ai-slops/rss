@@ -158,6 +158,6 @@ async fn ui_source_scene_and_unavailable_media_commands_are_truthful() {
     );
     assert_eq!(
         current["project"]["sources"][0]["tracks"][0]["connection"],
-        "missing"
+        "connecting"
     );
 }

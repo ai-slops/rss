@@ -63,6 +63,8 @@ pub struct Recording {
     pub id: Id,
     pub output_id: Id,
     pub name: String,
+    pub path: String,
+    pub tap_point: String,
     pub start_ns: String,
     pub end_ns: Option<String>,
     pub bytes: String,

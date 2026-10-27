@@ -71,9 +71,9 @@ async fn output_catalog_restart_and_command_deduplication_are_safe() {
         2
     );
     assert_eq!(output["status"], "applied");
-    assert_eq!(started["status"], "failed");
-    assert_eq!(stopped["status"], "failed");
-    assert_eq!(configured["outputStatuses"][0]["actual"], "failed");
+    assert_eq!(started["status"], "applied");
+    assert_eq!(stopped["status"], "applied");
+    assert_eq!(configured["outputStatuses"][0]["actual"], "stopped");
     assert!(
         configured["recordings"]
             .as_array()

@@ -6,6 +6,8 @@ use std::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::protocol::EngineRunId;
+
 pub use crate::output_manager::OutputManager;
 
 pub const PROGRAM_VIDEO_CHANNEL: &str = "live-program-video-v1";
@@ -66,6 +68,7 @@ pub struct RecordingDefinition {
     pub(crate) tap: MediaTap,
     pub(crate) directory: PathBuf,
     pub(crate) segment_duration: Duration,
+    pub(crate) engine_run_id: Option<String>,
 }
 
 impl RecordingDefinition {
@@ -84,7 +87,14 @@ impl RecordingDefinition {
             tap,
             directory: directory.to_path_buf(),
             segment_duration,
+            engine_run_id: None,
         })
+    }
+
+    #[must_use]
+    pub fn with_engine_run_id(mut self, engine_run_id: &EngineRunId) -> Self {
+        self.engine_run_id = Some(engine_run_id.as_str().to_owned());
+        self
     }
 }
 
@@ -163,6 +173,14 @@ pub struct RecordingSegment {
     pub bytes: u64,
     pub sha256: String,
     pub decoded: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub engine_run_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_start_ns: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_end_ns: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub media_uncertainty_ns: Option<u64>,
 }
 
 #[derive(Debug, Error)]

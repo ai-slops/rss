@@ -9,12 +9,14 @@ use gst::prelude::*;
 use gstreamer as gst;
 use uuid::Uuid;
 
+use crate::protocol::EngineClockMapping;
 use crate::{
     output::{OutputDefinition, OutputError},
     output_catalog,
     output_owner::SharedOutput,
     output_pipeline::{recording_pipeline, rtmps_pipeline},
     output_publisher::Publisher,
+    recording_clock::RecordingClock,
 };
 
 const STALL_TIMEOUT: Duration = Duration::from_secs(5);
@@ -26,6 +28,7 @@ pub struct ActivePipeline {
     last_progress_units: u64,
     last_progress: Instant,
     recording_directory: Option<PathBuf>,
+    recording_clock: Option<RecordingClock>,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -36,7 +39,10 @@ pub enum PipelinePoll {
 }
 
 impl ActivePipeline {
-    pub fn start(definition: &OutputDefinition) -> Result<Self, OutputError> {
+    pub fn start(
+        definition: &OutputDefinition,
+        engine_clock: Option<&EngineClockMapping>,
+    ) -> Result<Self, OutputError> {
         let (pipeline, publisher, recording_directory) = match definition {
             OutputDefinition::Recording(definition) => {
                 let session = definition.directory.join(Uuid::now_v7().to_string());
@@ -60,6 +66,9 @@ impl ActivePipeline {
         pipeline
             .set_state(gst::State::Playing)
             .map_err(|_| OutputError::Pipeline)?;
+        let recording_clock = engine_clock.and_then(|clock| {
+            RecordingClock::sample(&pipeline, clock, clock_engine_run_id(definition))
+        });
         Ok(Self {
             pipeline,
             publisher,
@@ -67,6 +76,7 @@ impl ActivePipeline {
             last_progress_units: 0,
             last_progress: Instant::now(),
             recording_directory,
+            recording_clock,
         })
     }
 
@@ -165,7 +175,14 @@ impl ActivePipeline {
         let Some(directory) = self.recording_directory.take() else {
             return Ok(());
         };
-        let recordings = output_catalog::finalize(&directory, self.started_at_ns, now_ns())?;
+        let recordings = output_catalog::finalize(
+            &directory,
+            output_catalog::CatalogWindow {
+                wall_start_ns: self.started_at_ns,
+                wall_end_ns: now_ns(),
+                clock: self.recording_clock.as_ref(),
+            },
+        )?;
         if let Ok(mut state) = shared.lock() {
             state.recordings.extend(recordings);
         }
@@ -176,11 +193,25 @@ impl ActivePipeline {
         let Some(directory) = self.recording_directory.take() else {
             return Ok(());
         };
-        let recordings = output_catalog::recover(&directory, self.started_at_ns, now_ns())?;
+        let recordings = output_catalog::recover(
+            &directory,
+            output_catalog::CatalogWindow {
+                wall_start_ns: self.started_at_ns,
+                wall_end_ns: now_ns(),
+                clock: self.recording_clock.as_ref(),
+            },
+        )?;
         if let Ok(mut state) = shared.lock() {
             state.recordings.extend(recordings);
         }
         Ok(())
+    }
+}
+
+fn clock_engine_run_id(definition: &OutputDefinition) -> Option<String> {
+    match definition {
+        OutputDefinition::Recording(recording) => recording.engine_run_id.clone(),
+        OutputDefinition::Rtmps { .. } => None,
     }
 }
 

@@ -8,6 +8,7 @@ pub struct Snapshot {
     pub cursor: String,
     pub server_time: String,
     pub engine_run_id: String,
+    pub engine_clock: live_production_media::protocol::EngineClockMapping,
     pub project: ProjectSnapshot,
     pub preview: PreviewSnapshot,
     pub program: ProgramSnapshot,
@@ -63,15 +64,16 @@ pub struct AudioRouteSnapshot {
     pub gain_db: f64,
     pub muted: bool,
     pub routed: bool,
-    pub input_peak_db: f64,
-    pub output_peak_db: f64,
-    pub clipping: bool,
+    pub input_peak_db: Option<f64>,
+    pub output_peak_db: Option<f64>,
+    pub clipping: Option<bool>,
 }
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PreviewSnapshot {
     pub scene_id: Id,
+    pub scene: Scene,
     pub revision: String,
     pub rendered_revision: Option<String>,
     pub visible_revision: Option<String>,

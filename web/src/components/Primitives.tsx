@@ -1,5 +1,6 @@
 import type { Icon } from "@phosphor-icons/react"
 import type { ButtonHTMLAttributes, PropsWithChildren, ReactNode } from "react"
+import { Children, cloneElement, isValidElement, useId } from "react"
 
 export type Tone = "neutral" | "preview" | "program" | "danger" | "healthy" | "warning" | "info"
 
@@ -57,13 +58,22 @@ export function Panel({ title, scope, actions, className = "", children }: Panel
   )
 }
 
+function fieldControls(children: ReactNode, id: string): ReactNode {
+  return Children.map(children, (child) => {
+    if (!isValidElement<{ id?: string; children?: ReactNode }>(child)) return child
+    if (child.type === "input" || child.type === "select" || child.type === "textarea") return cloneElement(child, { id })
+    return child.props.children === undefined ? child : cloneElement(child, { children: fieldControls(child.props.children, id) })
+  })
+}
+
 export function Field({ label, children, hint }: PropsWithChildren<{ readonly label: string; readonly hint?: string }>) {
+  const id = useId()
   return (
-    <fieldset className="field">
-      <legend className="field__label">{label}</legend>
-      {children}
+    <div className="field">
+      <label className="field__label" htmlFor={id}>{label}</label>
+      {fieldControls(children, id)}
       {hint === undefined ? null : <span className="field__hint">{hint}</span>}
-    </fieldset>
+    </div>
   )
 }
 

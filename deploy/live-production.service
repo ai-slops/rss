@@ -1,0 +1,32 @@
+[Unit]
+Description=Live Production headless studio
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=live-production
+Group=live-production
+WorkingDirectory=/opt/live-production
+ExecStart=/opt/live-production/target/release/live-production
+Environment=LIVE_PRODUCTION_STATE_DIR=/var/lib/live-production
+Environment=LIVE_PRODUCTION_WEB_DIST=/opt/live-production/web/dist
+Environment=LIVE_PRODUCTION_BIND=127.0.0.1:3000
+Environment=LIVE_PRODUCTION_SECURE_COOKIE=true
+StateDirectory=live-production
+StateDirectoryMode=0700
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/live-production
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

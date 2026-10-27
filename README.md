@@ -73,4 +73,10 @@ Environment configuration:
 
 Run the daemon as an unprivileged service account with write access only to its state directory and the required media devices. The executable runs without a browser; closing the browser must not stop media. Send SIGTERM for graceful shutdown and recording finalization. A native in-process media/plugin crash can terminate the daemon; trusted registration is not a sandbox. Crash-damaged segments and gaps must remain visible, and restart recovery must not silently mark them decode-validated.
 
+An administrator-reviewed Ubuntu service example is provided in `deploy/live-production.service`. It assumes a pre-created unprivileged account, a release build under `/opt/live-production`, native deployment dependencies and an authenticated HTTPS reverse proxy. It is not installed automatically, and the Ubuntu service/hardware profile remains unverified until exercised there.
+
+In this workspace the development daemon is registered as the single `studio` service through the existing `dim-workspace service` integration, using `scripts/serve.sh`, loopback port `3100` and secure cookies. `dim-workspace service list` reports its process status; that status is not evidence of media progress. The verified shared-ingress development route is **https://live-production--studio-6d4ac2cc57021bab.mj-y.com/**. `node scripts/control-smoke.mjs` verifies private control behavior; set `LIVE_PRODUCTION_URL` to that HTTPS origin when testing ingress. Reading the generated operator credential remains a private local action.
+
+The daemon holds an operating-system lock on its state directory so a second process cannot silently create another authoritative coordinator for the same SQLite project. Stop the managed service before starting another daemon against that directory; isolated acceptance runs use separate state directories.
+
 Do not automatically merge/deploy the work branch. Remaining target-system gates and final evidence belong in [the acceptance ledger](docs/acceptance.md).

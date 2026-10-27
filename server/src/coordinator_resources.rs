@@ -60,10 +60,7 @@ impl Owner {
         };
         let saved =
             scene_commands::save(&mut self.project, &save_command, &ScenePayload { scene })?;
-        if self.preview.id == saved.id {
-            self.preview = saved.clone();
-        }
-        Ok(Applied::revision(saved.revision))
+        self.apply_preview_draft(&command.id, saved)
     }
 
     pub(crate) fn create_source(
@@ -82,6 +79,17 @@ impl Owner {
             self.media.engine_run_id(),
             crate::coordinator_sources::source_spec(&source, &credential)?,
         )?;
+        self.media
+            .apply_track_timing(crate::media_bridge::TrackTimingRequest {
+                command_id: &uuid::Uuid::new_v4().to_string(),
+                expected_engine_run_id: self.media.engine_run_id(),
+                holdback_ms: self.project.holdback_ms,
+                corrections: source
+                    .tracks
+                    .iter()
+                    .map(|track| (track.id.0.clone(), track.correction_ms))
+                    .collect(),
+            })?;
         self.project.sources.push(source);
         self.bump_project()?;
         Ok(Applied {
@@ -92,6 +100,9 @@ impl Owner {
     }
 
     pub(crate) fn delete_source(&mut self, command: &Command) -> Result<Applied> {
+        if command.expected_revision.is_some() {
+            validation::revision(command.expected_revision.as_deref(), &self.project.revision)?;
+        }
         let source = self
             .project
             .sources
@@ -99,12 +110,21 @@ impl Owner {
             .find(|source| source.id == command.target_id)
             .ok_or_else(|| AppError::Invalid("Source no longer exists.".into()))?;
         let referenced = source.tracks.iter().any(|track| self.project.scenes.iter()
+            .chain([&self.program.scene, &self.preview]).chain(self.previous_program.iter().map(|program| &program.scene))
             .flat_map(|scene| &scene.items)
             .any(|item| matches!(&item.content, Content::Track { track_id } if track_id == &track.id)));
-        if referenced {
-            return Err(AppError::Conflict(
-                "Remove this source from every scene before deleting it.".into(),
-            ));
+        let routed = source.tracks.iter().any(|track| {
+            self.project
+                .audio_routes
+                .iter()
+                .any(|route| route.track_id == track.id && route.routed)
+        });
+        let active_recording = self.project.outputs.iter().any(|output| matches!(&output.adapter, OutputAdapter::SourceRecording { source_id, .. } if source_id == &source.id)
+            && self.output_statuses.iter().any(|status| status.output_id == output.id && (status.desired == DesiredState::Running || status.actual == ActualState::Finalizing)));
+        if referenced || routed || active_recording {
+            return Err(AppError::Conflict(format!(
+                "Source is still in use: visual snapshots={referenced}, live audio route={routed}, active source recorder={active_recording}. Remove draft placements, Take another layout, clear retained Preview/previous-Program dependencies, unroute audio and stop its recorder before deletion."
+            )));
         }
         let source_id = live_production_media::protocol::SourceId::new(&source.id.0)
             .map_err(|error| AppError::Invalid(error.to_string()))?;

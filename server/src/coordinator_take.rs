@@ -8,6 +8,33 @@ use crate::{
 };
 
 impl Owner {
+    pub(crate) fn apply_preview_draft(
+        &mut self,
+        command_id: &str,
+        scene: Scene,
+    ) -> Result<Applied> {
+        if self.preview.id != scene.id {
+            return Ok(Applied::revision(scene.revision));
+        }
+        let revision = media_revision(&scene);
+        let applied = self.media.prepare_composition(&CompositionRequest {
+            command_id,
+            expected_engine_run_id: self.media.engine_run_id(),
+            revision: &revision,
+            expected_program_revision: None,
+            placements: crate::media_bridge_layout::composition_placements(
+                &scene,
+                &self.project.assets,
+            )?,
+        })?;
+        self.preview = scene;
+        Ok(Applied {
+            revision: Some(self.preview.revision.clone()),
+            at_ns: applied.at_ns.value().to_string(),
+            plugin_result: None,
+        })
+    }
+
     pub(crate) fn cue_scene(&mut self, command: &Command) -> Result<Applied> {
         let scene = self.scene(&command.target_id)?.clone();
         validation::revision(command.expected_revision.as_deref(), &scene.revision)?;
@@ -31,7 +58,23 @@ impl Owner {
     }
 
     pub(crate) fn take_scene(&mut self, command: &Command, payload: &Take) -> Result<Applied> {
-        let scene = self.scene(&command.target_id)?.clone();
+        if command
+            .expected_engine_run_id
+            .as_ref()
+            .map(|id| id.0.as_str())
+            != Some(self.media.engine_run_id())
+        {
+            return Err(AppError::Conflict(
+                "Take requires the current engine-run identity. Refresh before retrying.".into(),
+            ));
+        }
+        let scene = if self.preview.id == command.target_id
+            && self.preview.revision == payload.scene_revision
+        {
+            self.preview.clone()
+        } else {
+            self.scene(&command.target_id)?.clone()
+        };
         validation::revision(Some(&payload.scene_revision), &scene.revision)?;
         let expected_program = payload
             .expected_program_revision
@@ -88,6 +131,42 @@ impl Owner {
         self.preview = previous.scene;
         Ok(Applied {
             revision: Some(self.preview.revision.clone()),
+            at_ns: applied.at_ns.value().to_string(),
+            plugin_result: None,
+        })
+    }
+
+    pub(crate) fn copy_cued_scene(&mut self, command: &Command, name: &str) -> Result<Applied> {
+        validation::name(name)?;
+        validation::revision(command.expected_revision.as_deref(), &self.preview.revision)?;
+        if command.target_id != self.preview.id || self.project.scenes.len() >= 64 {
+            return Err(AppError::Conflict(
+                "The cued snapshot changed or the 64-scene budget is full.".into(),
+            ));
+        }
+        let mut copied = self.preview.clone();
+        copied.id = crate::model::Id::new();
+        copied.name = name.into();
+        copied.revision = "1".into();
+        for item in &mut copied.items {
+            item.id = crate::model::Id::new();
+        }
+        let revision = media_revision(&copied);
+        let applied = self.media.prepare_composition(&CompositionRequest {
+            command_id: &command.id,
+            expected_engine_run_id: self.media.engine_run_id(),
+            revision: &revision,
+            expected_program_revision: None,
+            placements: crate::media_bridge_layout::composition_placements(
+                &copied,
+                &self.project.assets,
+            )?,
+        })?;
+        self.project.scenes.push(copied.clone());
+        self.preview = copied;
+        self.bump_project()?;
+        Ok(Applied {
+            revision: Some("1".into()),
             at_ns: applied.at_ns.value().to_string(),
             plugin_result: None,
         })

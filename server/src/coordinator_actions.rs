@@ -25,20 +25,14 @@ impl Owner {
             }
             Action::SceneSave(payload) => {
                 let scene = scene_commands::save(&mut self.project, command, payload)?;
-                if self.preview.id == scene.id {
-                    self.preview = scene.clone();
-                }
-                Applied::revision(scene.revision)
+                self.apply_preview_draft(&command.id, scene)?
             }
             Action::SceneRename(payload) => {
                 let mut scene = self.scene(&command.target_id)?.clone();
                 scene.name.clone_from(&payload.name);
                 let saved =
                     scene_commands::save(&mut self.project, command, &ScenePayload { scene })?;
-                if self.preview.id == saved.id {
-                    self.preview = saved.clone();
-                }
-                Applied::revision(saved.revision)
+                self.apply_preview_draft(&command.id, saved)?
             }
             Action::SceneDuplicate(_) => {
                 let source = self.scene(&command.target_id)?;
@@ -58,6 +52,7 @@ impl Owner {
                 Applied::revision(self.project.revision.clone())
             }
             Action::SceneCue(_) => self.cue_scene(command)?,
+            Action::SceneCopyCued(payload) => self.copy_cued_scene(command, &payload.name)?,
             Action::SceneTake(payload) => self.take_scene(command, payload)?,
             Action::SceneItemAdd(payload) => self.add_scene_item(command, &payload.source_id)?,
             Action::CuePrevious(_) => self.cue_previous(command)?,
@@ -65,6 +60,7 @@ impl Owner {
                 self.create_source(command, &payload.name, &payload.adapter)?
             }
             Action::SourceConfigure(payload) => {
+                validation::revision(command.expected_revision.as_deref(), &self.project.revision)?;
                 let source_index = self
                     .project
                     .sources
@@ -82,10 +78,14 @@ impl Owner {
                         .tracks
                         .iter()
                         .zip(&current.tracks)
-                        .any(|(next, old)| next.id != old.id || next.kind != old.kind)
+                        .any(|(next, old)| {
+                            next.id != old.id
+                                || next.kind != old.kind
+                                || next.correction_ms != old.correction_ms
+                        })
                 {
                     return Err(AppError::Invalid(
-                        "Source and track identity cannot be changed.".into(),
+                        "Source/track identity cannot change; apply track timing through Sync instead.".into(),
                     ));
                 }
                 validation::name(&payload.source.name)?;

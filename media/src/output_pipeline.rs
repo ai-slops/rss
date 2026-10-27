@@ -14,7 +14,7 @@ pub fn recording_pipeline(
     parse(&format!(
         "splitmuxsink name=recording_mux location={} muxer-factory=matroskamux max-size-time={segment_ns} send-keyframe-requests=true async-finalize=true \
          intervideosrc name=recording_video_input channel={} timeout=1000000000 ! queue max-size-time=2000000000 ! videoconvert ! video/x-raw,format=I420 ! x264enc tune=zerolatency speed-preset=veryfast key-int-max=30 bitrate=2500 ! h264parse config-interval=-1 ! identity name=output_activity ! recording_mux.video \
-         interaudiosrc channel={} buffer-time=500000000 latency-time=25000000 ! queue max-size-time=2000000000 ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=128000 ! aacparse ! recording_mux.audio_0",
+         interaudiosrc name=recording_audio_input channel={} buffer-time=500000000 latency-time=25000000 ! queue max-size-time=2000000000 ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=128000 ! aacparse ! recording_mux.audio_0",
         quote(pattern),
         tap.video_channel(),
         tap.audio_channel()

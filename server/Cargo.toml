@@ -31,6 +31,7 @@ live-production-media = { path = "../media" }
 [dev-dependencies]
 tempfile = "=3.23.0"
 tower = { version = "=0.5.2", features = ["util"] }
+gstreamer = "=0.24.5"
 
 [lints.rust]
 unsafe_code = "forbid"

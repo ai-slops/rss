@@ -11,8 +11,8 @@ const sources: readonly Source[] = [{
   enabled: true,
   adapter: { kind: "synthetic", pattern: "smpte", frequencyHz: 440 },
   tracks: [
-    { id: "video-a", kind: "video", correctionMs: 0, connection: "connected", format: "video", bufferMs: 0, lateFrames: 0 },
-    { id: "audio-a", kind: "audio", correctionMs: 0, connection: "connected", format: "audio", bufferMs: 0, lateFrames: 0 },
+    { id: "video-a", kind: "video", correctionMs: 0, connection: "connected", format: "video", bufferMs: 0, lateFrames: 0, drift: null },
+    { id: "audio-a", kind: "audio", correctionMs: 0, connection: "connected", format: "audio", bufferMs: 0, lateFrames: 0, drift: null },
   ],
   recordOnConnect: false,
   dependencyCount: 0,

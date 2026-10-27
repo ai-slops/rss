@@ -13,6 +13,7 @@ use live_production::{
 };
 use live_production_media::preview::PreviewOutputs;
 use live_production_media::protocol::EngineRunId;
+mod supervision;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -24,6 +25,7 @@ async fn main() -> anyhow::Result<()> {
         .json()
         .init();
 
+    let owner_watch = supervision::from_environment()?;
     let root = std::env::current_dir().context("resolve working directory")?;
     let state_directory = env_path("LIVE_PRODUCTION_STATE_DIR", root.join("var"));
     prepare_state_directory(&state_directory)?;
@@ -51,7 +53,7 @@ async fn main() -> anyhow::Result<()> {
         .context("bind HTTP listener")?;
     tracing::info!(%address, state_directory = %state_directory.display(), "live production daemon started");
     let serve_result = axum::serve(listener, routes::router(state, web_dist))
-        .with_graceful_shutdown(shutdown_signal())
+        .with_graceful_shutdown(shutdown_signal(owner_watch))
         .await
         .context("serve HTTP");
     let shutdown_result = shutdown_coordinator
@@ -145,7 +147,7 @@ fn validate_operator_password(password: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn shutdown_signal() {
+async fn shutdown_signal(owner_watch: Option<supervision::OwnerIdentity>) {
     let control_c = async {
         let _ = tokio::signal::ctrl_c().await;
     };
@@ -159,7 +161,7 @@ async fn shutdown_signal() {
     };
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
-    tokio::select! { _ = control_c => {}, _ = terminate => {} }
+    tokio::select! { _ = control_c => {}, _ = terminate => {}, _ = supervision::owner_gone(owner_watch) => {} }
 }
 
 #[cfg(test)]

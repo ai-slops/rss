@@ -1,0 +1,79 @@
+import ky, { HTTPError } from "ky"
+import {
+  type Command,
+  type CommandResponse,
+  commandResponseSchema,
+  errorResponseSchema,
+  type Snapshot,
+  snapshotSchema,
+} from "./schema"
+
+export class ApiError extends Error {
+  readonly name = "ApiError"
+
+  constructor(
+    readonly code: string,
+    message: string,
+    readonly status: number,
+  ) {
+    super(message)
+  }
+}
+
+const api = ky.create({
+  prefixUrl: "api/v1",
+  credentials: "same-origin",
+  timeout: 10_000,
+  retry: { limit: 0 },
+  headers: { "x-live-production": "1" },
+})
+
+async function translateError(error: unknown): Promise<never> {
+  if (error instanceof HTTPError) {
+    const body = errorResponseSchema.safeParse(await error.response.json())
+    if (body.success) {
+      throw new ApiError(body.data.code, body.data.message, error.response.status)
+    }
+    throw new ApiError("http_error", error.response.statusText, error.response.status)
+  }
+  if (error instanceof Error) {
+    throw new ApiError("network_error", error.message, 0)
+  }
+  throw error
+}
+
+export async function login(password: string): Promise<void> {
+  try {
+    await api.post("auth/login", { json: { password } })
+  } catch (error) {
+    return translateError(error)
+  }
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await api.post("auth/logout")
+  } catch (error) {
+    return translateError(error)
+  }
+}
+
+export async function getSnapshot(): Promise<Snapshot> {
+  try {
+    return snapshotSchema.parse(await api.get("snapshot").json())
+  } catch (error) {
+    return translateError(error)
+  }
+}
+
+export async function sendCommand(command: Command): Promise<CommandResponse> {
+  try {
+    return commandResponseSchema.parse(await api.post("commands", { json: command }).json())
+  } catch (error) {
+    return translateError(error)
+  }
+}
+
+export function commandId(): string {
+  return crypto.randomUUID()
+}

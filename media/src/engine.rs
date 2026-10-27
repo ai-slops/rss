@@ -1,10 +1,10 @@
 use std::sync::mpsc::{self, Sender};
-use std::thread;
+use std::thread::{self, JoinHandle};
 
 use thiserror::Error;
 
 use crate::engine_owner::owner_thread;
-use crate::protocol::{Command, EngineEvent, OutputId, TrackId};
+use crate::protocol::{Command, CommandId, CommandKind, EngineEvent, OutputId, TrackId};
 
 #[derive(Debug, Clone)]
 pub struct EngineConfig {
@@ -45,26 +45,40 @@ impl EngineConfig {
 
 #[derive(Debug)]
 pub struct MediaEngine {
-    sender: Sender<EngineRequest>,
+    sender: Option<Sender<EngineRequest>>,
+    owner: Option<JoinHandle<()>>,
 }
 
 impl MediaEngine {
     pub fn spawn(config: EngineConfig) -> Result<Self, EngineError> {
         let (sender, receiver) = mpsc::channel();
         let (startup_sender, startup_receiver) = mpsc::sync_channel(1);
-        thread::Builder::new()
+        let owner = thread::Builder::new()
             .name("media-engine".to_owned())
-            .spawn(move || owner_thread(&config, &receiver, &startup_sender))
+            .spawn(move || {
+                owner_thread(&config, &receiver, &startup_sender);
+            })
             .map_err(EngineError::Spawn)?;
-        startup_receiver
+        let startup = startup_receiver
             .recv()
-            .map_err(|_| EngineError::OwnerStopped)??;
-        Ok(Self { sender })
+            .map_err(|_| EngineError::OwnerStopped)
+            .and_then(std::convert::identity);
+        if let Err(error) = startup {
+            drop(sender);
+            let _ = owner.join();
+            return Err(error);
+        }
+        Ok(Self {
+            sender: Some(sender),
+            owner: Some(owner),
+        })
     }
 
     pub fn execute(&self, command: Command) -> Result<EngineEvent, EngineError> {
         let (response_sender, response_receiver) = mpsc::sync_channel(1);
         self.sender
+            .as_ref()
+            .ok_or(EngineError::OwnerStopped)?
             .send(EngineRequest {
                 command,
                 response_sender,
@@ -73,6 +87,30 @@ impl MediaEngine {
         response_receiver
             .recv()
             .map_err(|_| EngineError::OwnerStopped)
+    }
+}
+
+impl Drop for MediaEngine {
+    fn drop(&mut self) {
+        if let Some(sender) = self.sender.as_ref()
+            && let Ok(id) = CommandId::new("engine-drop-shutdown")
+        {
+            let (response_sender, response_receiver) = mpsc::sync_channel(1);
+            let _ = sender.send(EngineRequest {
+                command: Command {
+                    id,
+                    expected_engine_run_id: None,
+                    kind: CommandKind::Shutdown,
+                },
+                response_sender,
+            });
+            let _ = response_receiver.recv_timeout(std::time::Duration::from_secs(2));
+        }
+        let sender = self.sender.take();
+        drop(sender);
+        if let Some(owner) = self.owner.take() {
+            let _ = owner.join();
+        }
     }
 }
 

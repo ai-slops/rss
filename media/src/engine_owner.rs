@@ -62,6 +62,7 @@ pub fn owner_thread(
     loop {
         owner.preview_layers.maintain();
         owner.program_layers.maintain();
+        owner.maintain_sources();
         let request = match receiver.recv_timeout(std::time::Duration::from_millis(25)) {
             Ok(request) => request,
             Err(mpsc::RecvTimeoutError::Timeout) => continue,
@@ -73,6 +74,7 @@ pub fn owner_thread(
             break;
         }
     }
+    owner.shutdown_sources();
     stop_pipeline(&owner.pipeline);
 }
 
@@ -163,14 +165,9 @@ impl OwnerState {
 }
 
 fn stop_pipeline(pipeline: &gst::Pipeline) {
-    let _ = pipeline.send_event(gst::event::Eos::new());
-    if let Some(bus) = pipeline.bus() {
-        let _ = bus.timed_pop_filtered(
-            gst::ClockTime::from_seconds(10),
-            &[gst::MessageType::Eos, gst::MessageType::Error],
-        );
-    }
+    // Recorder owners drain their muxers separately; the core must not wait for EOS here.
     let _ = pipeline.set_state(gst::State::Null);
+    let _ = pipeline.state(gst::ClockTime::from_seconds(5));
 }
 
 pub fn now_nanoseconds() -> Nanoseconds {

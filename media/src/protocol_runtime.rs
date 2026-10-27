@@ -19,6 +19,7 @@ pub enum SourceKind {
         frequency_hz: u32,
     },
     SrtListener {
+        bind_address: String,
         port: u16,
         latency: Milliseconds,
         passphrase: String,
@@ -120,8 +121,15 @@ pub struct SourceSnapshot {
     pub connected: bool,
     pub video_received_frames: FrameCount,
     pub audio_received_buffers: FrameCount,
+    pub video_received_pts: Option<Nanoseconds>,
+    pub video_playout_pts: Option<Nanoseconds>,
+    pub video_delay: Milliseconds,
+    pub audio_delay: Milliseconds,
     pub video_frames: FrameCount,
     pub audio_buffers: FrameCount,
+    pub audio_input_peak_milli_db: Option<i32>,
+    pub audio_post_peak_milli_db: Option<i32>,
+    pub audio_clipping: Option<bool>,
     pub video_buffered_ns: Nanoseconds,
     pub audio_buffered_ns: Nanoseconds,
     pub gaps: Vec<SourceGap>,
@@ -129,10 +137,17 @@ pub struct SourceSnapshot {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceGap {
+    pub timebase: GapTimebase,
     pub generation: ContinuityGeneration,
     pub started_at: Nanoseconds,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ended_at: Option<Nanoseconds>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GapTimebase {
+    EngineMedia,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -143,6 +158,14 @@ pub struct ProgramProgress {
     pub last_video_at: Option<Nanoseconds>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_audio_at: Option<Nanoseconds>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineClockMapping {
+    pub media_time: Nanoseconds,
+    pub wall_time: Nanoseconds,
+    pub uncertainty: Nanoseconds,
 }
 
 macro_rules! decimal_u64_serde {

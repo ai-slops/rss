@@ -215,6 +215,7 @@ pub enum EventKind {
     RuntimeSnapshot {
         sources: Vec<SourceSnapshot>,
         program: ProgramProgress,
+        clock: EngineClockMapping,
     },
 }
 

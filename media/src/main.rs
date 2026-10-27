@@ -21,7 +21,7 @@ const STAGE_A_PLUGINS: &[&str] = &[
     "voaacenc",
     "matroskamux",
     "srtsrc",
-    "rtmpsink",
+    "fdsink",
     "webrtcsink",
 ];
 
@@ -53,6 +53,10 @@ enum Command {
         video_correction_ms: i64,
         #[arg(long, default_value_t = 125)]
         audio_correction_ms: i64,
+    },
+    OutputGate {
+        #[arg(long)]
+        config: PathBuf,
     },
     WebrtcGate {
         #[arg(long, default_value_t = 5)]
@@ -88,6 +92,11 @@ fn main() -> Result<()> {
             Milliseconds::new(video_correction_ms),
             Milliseconds::new(audio_correction_ms),
         ),
+        Command::OutputGate { config } => {
+            let report = live_production_media::output_gate::run(&config)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            Ok(())
+        }
         Command::WebrtcGate { duration_seconds } => {
             run_pipeline_for(
                 webrtc_preview_description(),

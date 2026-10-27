@@ -1,9 +1,10 @@
 import { ArrowsClockwise, CloudSlash, Gear, SignOut, SpeakerHigh, SpeakerSlash } from "@phosphor-icons/react"
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import type { Command, CommandKind, SceneItem, Snapshot } from "../api/schema"
+import type { Command, CommandKind, CommandResponse, Scene, SceneItem, Snapshot } from "../api/schema"
 import type { ConnectionState } from "../state/useProduction"
 import { AudioMixer } from "./AudioMixer"
 import { Inspector } from "./Inspector"
+import { MediaPlayer } from "./MediaPlayer"
 import { Monitors } from "./Monitors"
 import { OutputsPanel } from "./OutputsPanel"
 import { IconButton, Notice, StatusChip } from "./Primitives"
@@ -18,10 +19,11 @@ type ProductionWorkspaceProps = {
   readonly pending: ReadonlySet<string>
   readonly signOut: () => Promise<void>
   readonly refresh: () => Promise<void>
-  readonly command: (command: Omit<Command, "id">) => Promise<unknown>
+  readonly command: (command: Omit<Command, "id">) => Promise<CommandResponse | null>
 }
 
 type OperationTab = "audio" | "sync" | "outputs" | "setup"
+type HistoryEntry = { readonly items: readonly SceneItem[]; readonly revision: string }
 
 export function ProductionWorkspace(props: ProductionWorkspaceProps) {
   const [sceneId, setSceneId] = useState(props.snapshot.preview.sceneId)
@@ -29,12 +31,17 @@ export function ProductionWorkspace(props: ProductionWorkspaceProps) {
   const [operation, setOperation] = useState<OperationTab>("audio")
   const [listeningTrackId, setListeningTrackId] = useState<string | null>(null)
   const [monitorMuted, setMonitorMuted] = useState(true)
-  const undoStack = useRef<readonly SceneItem[][]>([])
-  const redoStack = useRef<readonly SceneItem[][]>([])
+  const [localDraft, setLocalDraft] = useState<Scene | null>(null)
+  const [draftConflict, setDraftConflict] = useState(false)
+  const undoStack = useRef<readonly HistoryEntry[]>([])
+  const redoStack = useRef<readonly HistoryEntry[]>([])
+  const saveQueue = useRef<Promise<CommandResponse | null> | null>(null)
   const dispatchCommand = props.command
+  const ignoreSourceMediaState = useCallback(() => undefined, [])
   const engineRunId = props.snapshot.engineRunId
   const disabled = props.connection !== "connected"
-  const scene = props.snapshot.project.scenes.find((candidate) => candidate.id === sceneId)
+  const persistedScene = props.snapshot.project.scenes.find((candidate) => candidate.id === sceneId)
+  const scene = localDraft?.id === sceneId ? localDraft : persistedScene
   const item = scene?.items.find((candidate) => candidate.id === itemId)
 
   useEffect(() => {
@@ -42,7 +49,7 @@ export function ProductionWorkspace(props: ProductionWorkspaceProps) {
     setSceneId(props.snapshot.preview.sceneId)
   }, [props.snapshot, sceneId])
 
-  const runCommand = useCallback((kind: CommandKind, targetId: string, payload: Readonly<Record<string, unknown>>, expectedRevision?: string): void => {
+  const runCommand = useCallback((kind: CommandKind, targetId: string, payload: Readonly<Record<string, unknown>>, expectedRevision?: string): Promise<CommandResponse | null> => {
     const command: Omit<Command, "id"> = {
       kind,
       targetId,
@@ -50,15 +57,34 @@ export function ProductionWorkspace(props: ProductionWorkspaceProps) {
       payload,
       ...(expectedRevision === undefined ? {} : { expectedRevision }),
     }
-    void dispatchCommand(command)
+    return dispatchCommand(command)
   }, [dispatchCommand, engineRunId])
 
   const patchItem = useCallback((nextItem: SceneItem): void => {
     if (scene === undefined) return
-    undoStack.current = [...undoStack.current, scene.items]
+    const previousItems = scene.items
+    const nextScene = { ...scene, items: scene.items.map((candidate) => candidate.id === nextItem.id ? nextItem : candidate) }
+    setLocalDraft(nextScene)
+    setDraftConflict(false)
     redoStack.current = []
-    runCommand("scene.save", scene.id, { scene: { ...scene, items: scene.items.map((candidate) => candidate.id === nextItem.id ? nextItem : candidate) } }, scene.revision)
-  }, [runCommand, scene])
+    const prior = saveQueue.current
+    const operation = (prior ?? Promise.resolve(null)).then(async (priorResponse) => {
+      if (priorResponse !== null && priorResponse.status !== "applied") return priorResponse
+      const expectedRevision = priorResponse?.actualRevision ?? persistedScene?.revision ?? scene.revision
+      const response = await runCommand("scene.save", scene.id, { scene: { ...nextScene, revision: expectedRevision } }, expectedRevision)
+      if (response?.status === "applied" && response.actualRevision !== undefined) {
+        undoStack.current = [...undoStack.current, { items: previousItems, revision: response.actualRevision }]
+      }
+      return response
+    })
+    saveQueue.current = operation
+    void operation.then((response) => {
+      if (saveQueue.current !== operation) return
+      saveQueue.current = null
+      if (response?.status === "applied") setLocalDraft(null)
+      else setDraftConflict(true)
+    })
+  }, [persistedScene?.revision, runCommand, scene])
 
   const shortcutState = useRef({ item, patchItem, runCommand, scene })
   useEffect(() => {
@@ -74,11 +100,15 @@ export function ProductionWorkspace(props: ProductionWorkspaceProps) {
         event.preventDefault()
         const from = event.shiftKey ? redoStack : undoStack
         const to = event.shiftKey ? undoStack : redoStack
-        const items = from.current.at(-1)
-        if (items === undefined) return
+        const entry = from.current.at(-1)
+        if (entry === undefined || entry.revision !== current.scene.revision || saveQueue.current !== null) return
         from.current = from.current.slice(0, -1)
-        to.current = [...to.current, current.scene.items]
-        current.runCommand("scene.save", current.scene.id, { scene: { ...current.scene, items } }, current.scene.revision)
+        const currentItems = current.scene.items
+        void current.runCommand("scene.save", current.scene.id, { scene: { ...current.scene, items: entry.items } }, entry.revision).then((response) => {
+          if (response?.status === "applied" && response.actualRevision !== undefined) {
+            to.current = [...to.current, { items: currentItems, revision: response.actualRevision }]
+          }
+        })
         return
       }
       if (event.key === "Escape") {
@@ -118,22 +148,33 @@ export function ProductionWorkspace(props: ProductionWorkspaceProps) {
         </div>
       </header>
       {props.connection === "stale" ? <Notice tone="warning" title="Control connection lost"><CloudSlash aria-hidden="true" /> Production continues on the server. Live mutations are disabled and will not be queued.</Notice> : null}
+      {draftConflict ? <Notice tone="warning" title="Draft conflict"><span>Your unsaved layout remains in this browser. Select another scene only after copying the values you need; the server version was not overwritten.</span></Notice> : null}
       {props.error === null ? null : <Notice tone="danger" title="Command not applied">{props.error}</Notice>}
       <div className="production-grid">
-        <ScenePanel disabled={disabled} onCommand={runCommand} onSelectItem={setItemId} onSelectScene={(nextId) => { setSceneId(nextId); setItemId(null); undoStack.current = []; redoStack.current = []; runCommand("scene.cue", nextId, {}, props.snapshot.project.scenes.find((candidate) => candidate.id === nextId)?.revision) }} programSceneId={props.snapshot.program.sceneId} scenes={props.snapshot.project.scenes} selectedItemId={itemId} selectedSceneId={sceneId} />
-        <Monitors disabled={disabled} onCuePrevious={() => {
+        <ScenePanel disabled={disabled || draftConflict} onCommand={runCommand} onSelectItem={setItemId} onSelectScene={(nextId) => { setSceneId(nextId); setLocalDraft(null); setDraftConflict(false); setItemId(null); undoStack.current = []; redoStack.current = []; void runCommand("scene.cue", nextId, {}, props.snapshot.project.scenes.find((candidate) => candidate.id === nextId)?.revision) }} programSceneId={props.snapshot.program.sceneId} scenes={props.snapshot.project.scenes.map((candidate) => localDraft?.id === candidate.id ? localDraft : candidate)} selectedItemId={itemId} selectedSceneId={sceneId} />
+        <Monitors disabled={disabled || draftConflict} monitorMuted={monitorMuted || listeningTrackId !== null} onCuePrevious={() => {
           const previous = props.snapshot.program.previousSceneId
           if (previous !== null) {
             setSceneId(previous)
-            runCommand("program.cuePrevious", previous, {}, props.snapshot.program.programRevision)
+            void runCommand("program.cuePrevious", previous, {}, props.snapshot.program.programRevision)
           }
         }} onTake={() => {
           if (scene === undefined) return
-          runCommand("scene.take", scene.id, { sceneRevision: scene.revision, expectedProgramRevision: props.snapshot.program.programRevision }, scene.revision)
-        }} pendingTake={props.pending.has("scene.take")} selectedScene={scene} snapshot={props.snapshot} />
-        <Inspector disabled={disabled} item={item} onPatch={patchItem} onRemove={() => {
+          void (async () => {
+            let saved: CommandResponse | null = null
+            while (saveQueue.current !== null) {
+              const pendingSave = saveQueue.current
+              saved = await pendingSave
+              if (saved !== null && saved.status !== "applied") return
+              if (saveQueue.current === pendingSave) break
+            }
+            const revision = saved?.actualRevision ?? scene.revision
+            await runCommand("scene.take", scene.id, { sceneRevision: revision, expectedProgramRevision: props.snapshot.program.programRevision }, revision)
+          })()
+        }} pendingTake={props.pending.has("scene.take") || saveQueue.current !== null} selectedScene={scene} snapshot={props.snapshot} />
+        <Inspector disabled={disabled || draftConflict} item={item} onPatch={patchItem} onRemove={() => {
           if (scene === undefined || item === undefined) return
-          runCommand("scene.save", scene.id, { scene: { ...scene, items: scene.items.filter((candidate) => candidate.id !== item.id) } }, scene.revision)
+          void runCommand("scene.save", scene.id, { scene: { ...scene, items: scene.items.filter((candidate) => candidate.id !== item.id) } }, scene.revision)
           setItemId(null)
         }} scene={scene} />
       </div>
@@ -145,9 +186,10 @@ export function ProductionWorkspace(props: ProductionWorkspaceProps) {
           {operation === "audio" ? <AudioMixer disabled={disabled} listeningTrackId={listeningTrackId} onCommand={runCommand} onListen={setListeningTrackId} snapshot={props.snapshot} /> : null}
           {operation === "sync" ? <SyncPanel disabled={disabled} onApply={(payload) => runCommand("timing.apply", props.snapshot.project.id, payload, props.snapshot.project.revision)} snapshot={props.snapshot} /> : null}
           {operation === "outputs" ? <OutputsPanel disabled={disabled} onCommand={runCommand} snapshot={props.snapshot} /> : null}
-          {operation === "setup" ? <SetupPanel disabled={disabled} onCommand={runCommand} snapshot={props.snapshot} /> : null}
+          {operation === "setup" ? <SetupPanel disabled={disabled} listeningTrackId={listeningTrackId} onCommand={runCommand} onListen={setListeningTrackId} snapshot={props.snapshot} /> : null}
         </div>
       </section>
+      {listeningTrackId === null ? null : <MediaPlayer audioOnly muted={monitorMuted} onState={ignoreSourceMediaState} stream={`source-${listeningTrackId}`} />}
     </main>
   )
 }

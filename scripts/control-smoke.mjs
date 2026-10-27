@@ -25,6 +25,10 @@ const snapshot = await authenticated.json();
 assert.equal(typeof snapshot.engineRunId, 'string');
 assert.ok(Array.isArray(snapshot.project.scenes));
 assert.ok(snapshot.project.scenes.length >= 1);
+if (process.env.LIVE_PRODUCTION_REQUIRE_STOPPED === '1') {
+  assert.ok(snapshot.outputStatuses.every(output => output.desired === 'stopped' && ['stopped', 'failed'].includes(output.actual)),
+    'Active or finalizing outputs block this development-service refresh');
+}
 const logout = await request('auth/logout', { method: 'POST', headers: { cookie, 'x-live-production': '1' } });
 assert.equal(logout.status, 204);
 assert.equal((await request('snapshot', { headers: { cookie } })).status, 401);

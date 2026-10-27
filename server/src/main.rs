@@ -11,6 +11,7 @@ use live_production::{
     media_bridge::MediaBridge,
     routes::{self, AppState},
 };
+use live_production_media::preview::PreviewOutputs;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -29,7 +30,13 @@ async fn main() -> anyhow::Result<()> {
     let media = MediaBridge::spawn().map_err(anyhow::Error::from)?;
     let coordinator = Coordinator::spawn(state_directory.join("project.sqlite"), media)
         .map_err(anyhow::Error::from)?;
-    let state = AppState::new(&password, false, coordinator);
+    let secure_cookie = std::env::var("LIVE_PRODUCTION_SECURE_COOKIE")
+        .unwrap_or_else(|_| "true".into())
+        .parse::<bool>()
+        .context("LIVE_PRODUCTION_SECURE_COOKIE must be true or false")?;
+    let previews = PreviewOutputs::spawn().map_err(anyhow::Error::from)?;
+    let media_state = live_production::routes_media::MediaState::new(previews);
+    let state = AppState::with_media(&password, secure_cookie, coordinator, media_state);
     let web_dist = env_path("LIVE_PRODUCTION_WEB_DIST", root.join("web/dist"));
     let address: SocketAddr = std::env::var("LIVE_PRODUCTION_BIND")
         .unwrap_or_else(|_| "127.0.0.1:3000".into())
@@ -64,11 +71,16 @@ fn prepare_state_directory(path: &Path) -> anyhow::Result<()> {
 
 fn operator_password(state_directory: &Path) -> anyhow::Result<String> {
     if let Ok(password) = std::env::var("LIVE_PRODUCTION_PASSWORD") {
+        validate_operator_password(&password)?;
         return Ok(password);
     }
     let path = state_directory.join("operator-password");
     match fs::read_to_string(&path) {
-        Ok(password) => return Ok(password.trim_end().to_owned()),
+        Ok(password) => {
+            let password = password.trim_end().to_owned();
+            validate_operator_password(&password)?;
+            return Ok(password);
+        }
         Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
             return Err(error)
                 .with_context(|| format!("read operator password {}", path.display()));
@@ -96,6 +108,18 @@ fn operator_password(state_directory: &Path) -> anyhow::Result<String> {
     Ok(password)
 }
 
+fn validate_operator_password(password: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        password.len() >= 16,
+        "Operator password must contain at least 16 bytes; use the generated credential or a strong password."
+    );
+    anyhow::ensure!(
+        password.len() <= 1024,
+        "Operator password exceeds the 1024-byte limit."
+    );
+    Ok(())
+}
+
 async fn shutdown_signal() {
     let control_c = async {
         let _ = tokio::signal::ctrl_c().await;
@@ -111,4 +135,19 @@ async fn shutdown_signal() {
     #[cfg(not(unix))]
     let terminate = std::future::pending::<()>();
     tokio::select! { _ = control_c => {}, _ = terminate => {} }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_operator_password;
+
+    #[test]
+    fn weak_operator_password_is_rejected() {
+        assert!(validate_operator_password("short").is_err());
+    }
+
+    #[test]
+    fn generated_strength_password_is_accepted() {
+        assert!(validate_operator_password("0123456789abcdef0123456789abcdef").is_ok());
+    }
 }

@@ -102,6 +102,11 @@ async fn ui_source_scene_and_unavailable_media_commands_are_truthful() {
     let harness = Harness::new();
     let cookie = harness.login().await;
     let initial = harness.snapshot(&cookie).await;
+    let port = std::net::UdpSocket::bind("127.0.0.1:0")
+        .expect("isolated UDP reservation")
+        .local_addr()
+        .expect("isolated UDP address")
+        .port();
 
     // When
     let source = harness
@@ -110,7 +115,7 @@ async fn ui_source_scene_and_unavailable_media_commands_are_truthful() {
             json!({
                 "id": "source-1", "kind": "source.create", "targetId": initial["project"]["id"],
                 "expectedEngineRunId": initial["engineRunId"],
-                "payload": {"name": "New SRT input", "adapter": {"kind": "srt"}}
+                "payload": {"name": "New SRT input", "adapter": {"kind": "srt", "port": port}}
             }),
         )
         .await;

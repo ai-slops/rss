@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ApiError, commandId, getSnapshot, login, logout, sendCommand } from "../api/client"
-import type { Command, CommandResponse, Snapshot } from "../api/schema"
+import { type Command, type CommandResponse, commandKindSchema, type Snapshot } from "../api/schema"
 
 export type ConnectionState = "connecting" | "connected" | "stale" | "unauthorized"
 
@@ -38,7 +38,9 @@ export function useProduction() {
   useEffect(() => {
     if (connection !== "connected" || cursor.current === null) return
     const events = new EventSource(`/api/v1/events?after=${encodeURIComponent(cursor.current)}`)
-    events.onmessage = () => void refresh()
+    const handleEvent = (): void => void refresh()
+    for (const kind of commandKindSchema.options) events.addEventListener(kind, handleEvent)
+    events.addEventListener("plugin.external", handleEvent)
     events.addEventListener("gap", () => void refresh())
     events.onerror = () => {
       setConnection("stale")

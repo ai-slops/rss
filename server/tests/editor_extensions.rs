@@ -202,12 +202,31 @@ async fn editor_export_reconciles_real_program_recording() {
         exported["pluginResult"]["timebase"]["mediaClockDomain"],
         "engineRunPtsNs"
     );
-    assert!(exported["pluginResult"]["timebase"]["mapping"].is_null());
+    assert!(exported["pluginResult"]["timebase"]["mapping"].is_object());
+    assert!(inventory.iter().all(|media| {
+        let mapping = &media["fileTimeMapping"];
+        let start = mapping["mediaStartNs"]
+            .as_str()
+            .and_then(|value| value.parse::<u64>().ok());
+        let end = mapping["mediaEndNs"]
+            .as_str()
+            .and_then(|value| value.parse::<u64>().ok());
+        mapping["engineRunId"] == initial["engineRunId"]
+            && start.zip(end).is_some_and(|(start, end)| end > start)
+            && mapping["wallStartNs"].as_str().is_some()
+            && mapping["uncertaintyNs"].as_str().is_some()
+    }));
+    let starts = inventory
+        .iter()
+        .filter_map(|media| media["fileTimeMapping"]["mediaStartNs"].as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(starts.len(), inventory.len());
     assert!(
         exported["pluginResult"]["issues"]
             .as_array()
             .expect("issues")
             .iter()
-            .any(|issue| issue["kind"] == "missingClockMapping")
+            .all(|issue| issue["kind"] != "missingClockMapping"
+                && issue["kind"] != "unknownRecordingTimebase")
     );
 }

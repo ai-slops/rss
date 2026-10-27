@@ -22,6 +22,8 @@ pub struct EditorJournal {
     pub(crate) observations: Vec<EditorObservation>,
     pub(crate) markers: Vec<EditorialMarker>,
     pub(crate) gaps: Vec<EditorGap>,
+    #[serde(default)]
+    pub(crate) clock_anchors: Vec<EditorClockAnchor>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -43,6 +45,13 @@ pub(crate) struct EditorObservation {
 pub(crate) struct TrackTiming {
     pub(crate) track_id: Id,
     pub(crate) correction_ms: i64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EditorClockAnchor {
+    pub(crate) engine_run_id: String,
+    pub(crate) mapping: live_production_media::protocol::EngineClockMapping,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -83,6 +92,7 @@ impl EditorJournal {
             observations: Vec::new(),
             markers: Vec::new(),
             gaps: Vec::new(),
+            clock_anchors: Vec::new(),
         };
         self.capture(&snapshot.cursor, &snapshot.server_time, snapshot);
         self.persist(store, namespace)
@@ -149,6 +159,10 @@ impl EditorJournal {
     }
 
     fn capture(&mut self, cursor: &str, occurred_at_ns: &str, snapshot: &Snapshot) {
+        self.clock_anchors.push(EditorClockAnchor {
+            engine_run_id: snapshot.engine_run_id.clone(),
+            mapping: snapshot.engine_clock.clone(),
+        });
         let scene = snapshot.program.applied_scene.clone();
         let track_corrections = snapshot
             .project
@@ -175,5 +189,26 @@ impl EditorJournal {
 
     fn persist(&self, store: &Store, namespace: &str) -> anyhow::Result<()> {
         store.plugin_put(namespace, STORAGE_KEY, &serde_json::to_value(self)?)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legacy_journal_without_clock_anchors_remains_readable() -> anyhow::Result<()> {
+        let journal = serde_json::from_value::<EditorJournal>(serde_json::json!({
+            "sessionId": "legacy",
+            "active": false,
+            "projectId": null,
+            "engineRunId": null,
+            "startedAtNs": null,
+            "observations": [],
+            "markers": [],
+            "gaps": []
+        }))?;
+        assert!(journal.clock_anchors.is_empty());
+        Ok(())
     }
 }

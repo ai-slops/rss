@@ -175,4 +175,22 @@ mod tests {
             .expect("read plugin data");
         assert_eq!(value, Some(serde_json::json!({"future": 42})));
     }
+
+    #[test]
+    fn ingest_credential_is_private_random_and_stable_across_reopen() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let path = directory.path().join("project.sqlite");
+        let source_id = "public-source-id";
+        let first = Store::open(&path)
+            .expect("database")
+            .ingest_credential(source_id)
+            .expect("credential");
+        let second = Store::open(&path)
+            .expect("reopened database")
+            .ingest_credential(source_id)
+            .expect("stable credential");
+        assert_eq!(first, second);
+        assert!(!first.contains(source_id));
+        assert!(first.len() >= 64);
+    }
 }

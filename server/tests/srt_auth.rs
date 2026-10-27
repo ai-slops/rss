@@ -46,11 +46,13 @@ async fn srt_publish_credential_requires_authenticated_provisioning() {
     // Then
     assert_eq!(unauthorized.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(authorized.status(), StatusCode::OK);
+    assert_eq!(authorized.headers()["cache-control"], "no-store, private");
     let bytes = axum::body::to_bytes(authorized.into_body(), 16_384)
         .await
         .expect("credential body");
     let body: serde_json::Value = serde_json::from_slice(&bytes).expect("credential JSON");
     let passphrase = body["passphrase"].as_str().expect("passphrase");
+    assert_eq!(body["bindAddress"], "0.0.0.0");
     assert!(passphrase.len() >= 32);
     assert!(!passphrase.contains(source_id));
     assert!(!snapshot.to_string().contains(passphrase));

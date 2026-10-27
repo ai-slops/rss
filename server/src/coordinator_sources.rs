@@ -18,7 +18,12 @@ impl Owner {
             .iter()
             .find(|source| source.id.0 == id)
             .ok_or_else(|| AppError::Invalid("Source no longer exists.".into()))?;
-        let SourceAdapter::Srt { port, buffer_ms } = &source.adapter else {
+        let SourceAdapter::Srt {
+            bind_address,
+            port,
+            buffer_ms,
+        } = &source.adapter
+        else {
             return Err(AppError::Invalid(
                 "Synthetic sources have no publishing endpoint.".into(),
             ));
@@ -30,6 +35,7 @@ impl Owner {
         Ok(serde_json::json!({
             "sourceId": id,
             "protocol": "srt",
+            "bindAddress": bind_address,
             "port": *port,
             "bufferMs": *buffer_ms,
             "passphrase": passphrase,
@@ -85,7 +91,12 @@ pub(crate) fn source_spec(source: &Source, credential: &str) -> Result<SourceSpe
             pattern: synthetic_pattern(pattern)?,
             frequency_hz: *frequency_hz,
         },
-        SourceAdapter::Srt { port, buffer_ms } => SourceKind::SrtListener {
+        SourceAdapter::Srt {
+            bind_address,
+            port,
+            buffer_ms,
+        } => SourceKind::SrtListener {
+            bind_address: bind_address.clone(),
             port: *port,
             latency: Milliseconds::new(i64::from(*buffer_ms)),
             passphrase: credential.to_owned(),
@@ -153,7 +164,11 @@ fn unique_adapter(project: &Project, adapter: &SourceAdapter) -> Result<SourceAd
             pattern: pattern.clone(),
             frequency_hz: *frequency_hz,
         }),
-        SourceAdapter::Srt { port, buffer_ms } => {
+        SourceAdapter::Srt {
+            bind_address,
+            port,
+            buffer_ms,
+        } => {
             let mut candidate = *port;
             for _ in 0..=u16::MAX {
                 let occupied = project.sources.iter().any(|source| {
@@ -161,6 +176,7 @@ fn unique_adapter(project: &Project, adapter: &SourceAdapter) -> Result<SourceAd
                 });
                 if !occupied {
                     return Ok(SourceAdapter::Srt {
+                        bind_address: bind_address.clone(),
                         port: candidate,
                         buffer_ms: *buffer_ms,
                     });
@@ -205,6 +221,7 @@ mod tests {
         // Given
         let project = Project::empty();
         let adapter = SourceAdapter::Srt {
+            bind_address: "0.0.0.0".into(),
             port: 9_000,
             buffer_ms: 120,
         };

@@ -42,7 +42,7 @@ pub fn apply_at_frame_boundary(
                 let media_at = info
                     .buffer()
                     .and_then(|buffer| buffer.pts())
-                    .map_or(0, |pts| pts.nseconds());
+                    .map_or(0, gst::ClockTime::nseconds);
                 let _ = applied_sender.send(Nanoseconds::new(media_at));
                 gst::PadProbeReturn::Remove
             },

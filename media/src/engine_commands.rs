@@ -4,12 +4,9 @@ use gstreamer as gst;
 use crate::engine_layout::apply_at_frame_boundary;
 use crate::engine_owner::OwnerState;
 use crate::protocol::{
-    AudioMixRoute, CommandKind, EventKind, Milliseconds, OutputId, OutputObservedState,
-    OutputSnapshot, ProgramRevision, ScenePlacement, TrackCorrection,
+    AudioMixRoute, CommandKind, EventKind, OutputId, OutputObservedState, OutputSnapshot,
+    ProgramRevision, ScenePlacement,
 };
-use crate::timing::{TimingLimits, TimingPlan};
-
-const MAXIMUM_BUFFER_MS: i64 = 5_000;
 
 impl OwnerState {
     pub(super) fn apply(&mut self, command: &CommandKind) -> EventKind {
@@ -40,6 +37,7 @@ impl OwnerState {
             CommandKind::QueryRuntime => EventKind::RuntimeSnapshot {
                 sources: self.runtime_sources(),
                 program: crate::engine_telemetry::program_progress(&self.pipeline),
+                clock: crate::engine_telemetry::clock_mapping(&self.pipeline),
             },
             CommandKind::ReconnectSource { source_id } => self.reconnect_source(source_id),
             CommandKind::RemoveSource { source_id } => self.remove_source(source_id),
@@ -53,14 +51,19 @@ impl OwnerState {
         }
     }
 
-    fn apply_audio_mix(&self, routes: &[AudioMixRoute]) -> EventKind {
+    fn apply_audio_mix(&mut self, routes: &[AudioMixRoute]) -> EventKind {
         let Some(mixer) = self.pipeline.by_name("program_mixer") else {
             return EventKind::Failed {
                 reason: "pipeline has no program_mixer element".to_owned(),
             };
         };
-        let mut changes = Vec::with_capacity(routes.len());
+        let mut identities = std::collections::HashSet::new();
         for route in routes {
+            if !identities.insert(&route.track_id) {
+                return EventKind::Rejected {
+                    reason: "audio tracks may be routed only once".into(),
+                };
+            }
             if !(-60_000..=12_000).contains(&route.gain_milli_db) {
                 return EventKind::Rejected {
                     reason: format!("gain out of range for track '{}'", route.track_id.as_str()),
@@ -71,18 +74,34 @@ impl OwnerState {
                     reason: format!("unknown audio route '{}'", route.track_id.as_str()),
                 };
             };
-            let Some(pad) = mixer.static_pad(pad_name) else {
+            if mixer.static_pad(pad_name).is_none() {
                 return EventKind::Failed {
                     reason: format!("program_mixer has no pad '{pad_name}'"),
                 };
+            }
+        }
+        let mut changes = Vec::with_capacity(self.audio_routes.len());
+        for (track, name) in &self.audio_routes {
+            let Some(pad) = mixer.static_pad(name) else {
+                return EventKind::Failed {
+                    reason: format!("program mixer lost route '{}'", track.as_str()),
+                };
             };
-            let volume = 10.0_f64.powf(f64::from(route.gain_milli_db) / 20_000.0);
-            changes.push((pad, volume, route.muted || !route.routed));
+            let route = routes.iter().find(|route| &route.track_id == track);
+            let volume = route.map_or(1.0, |route| {
+                10.0_f64.powf(f64::from(route.gain_milli_db) / 20_000.0)
+            });
+            let muted = route.is_none_or(|route| route.muted || !route.routed);
+            changes.push((pad, volume, muted));
         }
         for (pad, volume, muted) in changes {
             pad.set_property("volume", volume);
             pad.set_property("mute", muted);
         }
+        self.mix_settings = routes
+            .iter()
+            .map(|route| (route.track_id.clone(), route.clone()))
+            .collect();
         self.applied(false)
     }
 
@@ -104,77 +123,6 @@ impl OwnerState {
             media_at: Some(media_at),
             program_revision: self.program_revision.clone(),
         }
-    }
-
-    fn apply_timing(&self, timing: (Milliseconds, Milliseconds, Milliseconds)) -> EventKind {
-        let (holdback, video_correction, audio_correction) = timing;
-        let plan = TimingPlan::validate(
-            &TimingLimits::new(Milliseconds::new(MAXIMUM_BUFFER_MS)),
-            holdback,
-            video_correction,
-            audio_correction,
-        );
-        let Ok(plan) = plan else {
-            return rejected_timing(plan);
-        };
-        let Some(video_timing) = self.pipeline.by_name("video_timing_source") else {
-            return EventKind::Failed {
-                reason: "pipeline has no video_timing_source element".to_owned(),
-            };
-        };
-        let Some(audio_timing) = self.pipeline.by_name("audio_timing_source") else {
-            return EventKind::Failed {
-                reason: "pipeline has no audio_timing_source element".to_owned(),
-            };
-        };
-        video_timing.set_property("timestamp-offset", to_nanoseconds(plan.video_delay()));
-        audio_timing.set_property("timestamp-offset", to_nanoseconds(plan.audio_delay()));
-        self.applied(true)
-    }
-
-    fn apply_track_timing(
-        &self,
-        holdback: Milliseconds,
-        corrections: &[TrackCorrection],
-    ) -> EventKind {
-        let mut changes = Vec::with_capacity(corrections.len());
-        for correction in corrections {
-            let Some(element_name) = self.tracks.get(&correction.track_id) else {
-                return EventKind::Rejected {
-                    reason: format!("unknown track '{}'", correction.track_id.as_str()),
-                };
-            };
-            let plan = TimingPlan::validate(
-                &TimingLimits::new(Milliseconds::new(MAXIMUM_BUFFER_MS)),
-                holdback,
-                correction.correction,
-                correction.correction,
-            );
-            let Ok(plan) = plan else {
-                return rejected_timing(plan);
-            };
-            let element = self.pipeline.by_name(element_name);
-            let control = self.timing_controls.get(&correction.track_id).cloned();
-            if element.is_none() && control.is_none() {
-                return EventKind::Failed {
-                    reason: format!("pipeline has no timing element '{element_name}'"),
-                };
-            }
-            let delay = plan.video_delay();
-            changes.push((element, control, to_nanoseconds(delay)));
-        }
-        for (element, control, offset) in changes {
-            if let Some(control) = control {
-                control.set_offset(offset);
-            } else if let Some(element) = element {
-                if element.find_property("ts-offset").is_some() {
-                    element.set_property("ts-offset", offset);
-                } else {
-                    element.set_property("timestamp-offset", offset);
-                }
-            }
-        }
-        self.applied(true)
     }
 
     fn prepare_preview(
@@ -252,16 +200,4 @@ impl OwnerState {
         outputs.sort_by(|left, right| left.id.as_str().cmp(right.id.as_str()));
         outputs
     }
-}
-
-fn rejected_timing(plan: Result<TimingPlan, crate::timing::TimingRejection>) -> EventKind {
-    EventKind::Rejected {
-        reason: plan
-            .err()
-            .map_or_else(|| "invalid timing".to_owned(), |error| error.to_string()),
-    }
-}
-
-const fn to_nanoseconds(value: Milliseconds) -> i64 {
-    value.value().saturating_mul(1_000_000)
 }

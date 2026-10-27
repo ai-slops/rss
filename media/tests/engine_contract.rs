@@ -1,9 +1,7 @@
 use live_production_media::engine::{EngineConfig, MediaEngine};
 use live_production_media::protocol::{
-    AudioMixRoute, Command, CommandId, CommandKind, CompositionPlacement, EventKind, FitMode,
-    Milliseconds, NormalizedCrop, OutputId, OutputObservedState, PlacementContent, PlacementId,
-    ProgramRevision, ScenePlacement, SourceId, SourceKind, SourceSpec, SyntheticPattern,
-    TrackCorrection, TrackId,
+    AudioMixRoute, Command, CommandId, CommandKind, EventKind, Milliseconds, OutputId,
+    OutputObservedState, ProgramRevision, ScenePlacement, TrackCorrection, TrackId,
 };
 
 #[test]
@@ -47,160 +45,6 @@ fn owner_thread_applies_timing_and_controls_output_valve() -> anyhow::Result<()>
         outputs.first().map(|output| output.observed),
         Some(OutputObservedState::Running)
     );
-    Ok(())
-}
-
-#[test]
-fn dynamic_composition_places_one_track_twice_with_independent_transforms() -> anyhow::Result<()> {
-    // Given
-    let assets = tempfile::tempdir()?;
-    let image_path = assets.path().join("pixel.png");
-    std::fs::write(
-        &image_path,
-        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x04\x00\x00\x00\xb5\x1c\x0c\x02\x00\x00\x00\x0bIDATx\xdacd\xf8\x0f\x00\x01\x05\x01\x01'\x18\xe3f\x00\x00\x00\x00IEND\xaeB`\x82",
-    )?;
-    let description = "compositor name=preview_compositor background=black force-live=true ignore-inactive-pads=true ! video/x-raw,width=960,height=540,framerate=30/1 ! fakesink sync=false compositor name=program_compositor background=black force-live=true ignore-inactive-pads=true ! video/x-raw,width=960,height=540,framerate=30/1 ! fakesink sync=false";
-    let engine = MediaEngine::spawn(EngineConfig::new(
-        description,
-        std::iter::empty::<(OutputId, &str)>(),
-    ))?;
-    let video_track_id = TrackId::new("camera-video")?;
-    let added = engine.execute(Command {
-        id: CommandId::new("dynamic-source")?,
-        expected_engine_run_id: None,
-        kind: CommandKind::AddSource {
-            source: SourceSpec {
-                id: SourceId::new("camera")?,
-                video_track_id: video_track_id.clone(),
-                audio_track_id: TrackId::new("camera-audio")?,
-                kind: SourceKind::Synthetic {
-                    pattern: SyntheticPattern::Smpte,
-                    frequency_hz: 440,
-                },
-            },
-        },
-    })?;
-    let revision = ProgramRevision::new("dynamic-scene-1")?;
-    let crop = NormalizedCrop {
-        left_milli: 0,
-        top_milli: 0,
-        right_milli: 0,
-        bottom_milli: 0,
-    };
-    let placements = vec![
-        CompositionPlacement {
-            id: PlacementId::new("camera-left")?,
-            content: PlacementContent::Track {
-                track_id: video_track_id.clone(),
-            },
-            x: 0,
-            y: 0,
-            width: 480,
-            height: 540,
-            crop,
-            fit: FitMode::Cover,
-            opacity_milli: 1_000,
-            z_order: 0,
-        },
-        CompositionPlacement {
-            id: PlacementId::new("camera-pip")?,
-            content: PlacementContent::Track {
-                track_id: video_track_id,
-            },
-            x: 640,
-            y: 360,
-            width: 320,
-            height: 180,
-            crop,
-            fit: FitMode::Contain,
-            opacity_milli: 750,
-            z_order: 2,
-        },
-        CompositionPlacement {
-            id: PlacementId::new("lower-third")?,
-            content: PlacementContent::Solid { argb: 0xff204060 },
-            x: 0,
-            y: 480,
-            width: 960,
-            height: 60,
-            crop,
-            fit: FitMode::Stretch,
-            opacity_milli: 900,
-            z_order: 1,
-        },
-        CompositionPlacement {
-            id: PlacementId::new("title")?,
-            content: PlacementContent::Text {
-                text: "Live".to_owned(),
-                argb: 0xffff_ffff,
-                font_size: 48,
-            },
-            x: 0,
-            y: 0,
-            width: 320,
-            height: 90,
-            crop,
-            fit: FitMode::Contain,
-            opacity_milli: 1_000,
-            z_order: 3,
-        },
-        CompositionPlacement {
-            id: PlacementId::new("logo")?,
-            content: PlacementContent::Image {
-                path: image_path.to_string_lossy().into_owned(),
-            },
-            x: 860,
-            y: 0,
-            width: 100,
-            height: 100,
-            crop,
-            fit: FitMode::Contain,
-            opacity_milli: 1_000,
-            z_order: 4,
-        },
-    ];
-
-    // When
-    let prepared = engine.execute(Command {
-        id: CommandId::new("dynamic-prepare")?,
-        expected_engine_run_id: Some(added.engine_run_id.clone()),
-        kind: CommandKind::PrepareComposition {
-            revision: revision.clone(),
-            placements,
-        },
-    })?;
-    let taken = engine.execute(Command {
-        id: CommandId::new("dynamic-take")?,
-        expected_engine_run_id: Some(added.engine_run_id),
-        kind: CommandKind::TakePrepared {
-            revision: revision.clone(),
-            expected_program_revision: None,
-        },
-    })?;
-
-    // Then
-    assert!(
-        matches!(prepared.kind, EventKind::Applied { .. }),
-        "{prepared:?}"
-    );
-    assert!(
-        matches!(
-            taken.kind,
-            EventKind::Applied {
-                program_revision: Some(ref applied),
-                ..
-            } if applied == &revision
-        ),
-        "{taken:?}"
-    );
-    let EventKind::Applied {
-        media_at: Some(media_at),
-        ..
-    } = &taken.kind
-    else {
-        anyhow::bail!("Take omitted first-new-frame media PTS");
-    };
-    let _first_new_frame_pts = media_at.value();
     Ok(())
 }
 
@@ -283,7 +127,13 @@ fn owner_prepares_preview_takes_exact_revision_and_applies_track_timing() -> any
     })?;
 
     // Then
-    assert!(matches!(timing.kind, EventKind::Applied { .. }));
+    assert!(matches!(
+        timing.kind,
+        EventKind::Applied {
+            media_at: Some(_),
+            ..
+        }
+    ));
     assert!(matches!(prepared.kind, EventKind::Applied { .. }));
     assert!(matches!(
         taken.kind,

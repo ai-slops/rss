@@ -38,6 +38,8 @@ Native preview/test process ownership and the repeated-run regression are docume
 
 Full acceptance fails if a required gate is absent. Reports and generated fixtures stay under `var/`; the latest command report is `var/acceptance/latest.txt`. [Stage A evidence](docs/stage-a.md) records the exact measured codec profile and limits. A software fixture is not proof of hardware 1080p60/4K capacity, OBS track separation, target-laptop ICE, platform semantics or editor interoperability.
 
+Workspace Rust tests include a three-minute native drift/timing/recording regression even with `--quick`; that flag skips standalone CLI/browser gates, not the Rust endurance contract. Full acceptance additionally requires an actual supervised SIGKILL/restart recording-recovery gate. [Internal gate evidence](docs/internal-gates-2026-10-27.md) records the measured results. When a studio must stay running, validate in a separate checkout/target and separate web output directory: the normal development build must not replace its executable or served bundle implicitly.
+
 ## Dependencies and Ubuntu deployment
 
 The measured development toolchain is Rust/Cargo 1.91.1, GStreamer 1.26.9, FFmpeg 8.0.1, GCC 15.2.0, official Rust GStreamer bindings and locked React/TypeScript dependencies. `scripts/bootstrap.sh` pins native packages and installs them only under `.tools/`; `scripts/env.sh` activates them. See [the local-musl ADR](docs/adr-001-local-musl-toolchain.md). Rust and npm transitive dependencies are locked in `Cargo.lock` and `web/package-lock.json`.
@@ -47,6 +49,8 @@ On Ubuntu, have the deployment administrator supply Rust/Cargo, a C compiler, pk
 ## OBS publisher profile
 
 Provision a named authenticated input first. OBS may publish an ordinary network stream; device enrollment, Tailscale, a desktop companion and platform account credentials are not required. The baseline transport profile is SRT carrying H.264 video and AAC audio in MPEG-TS, with a bounded transport latency configured separately from manual sync correction and Program holdback. Use the source's scoped ingest credential, never an operator or platform credential.
+
+The authenticated publishing endpoint supplies both the scoped passphrase and `streamId`; configure the sender's SRT `streamid` option from that value. Do not log or export these secrets. Native admission is peer-specific: simultaneous publishers cannot take another active/pending lease, and failed handshakes are recovered by closing the old listener before reuse. Legacy empty-streamid clients retain the non-reassigning lease behavior, but new provisioning should use the supplied value. Real OBS/plugin interoperability remains unverified until exercised on that sender.
 
 An incoming mixed stereo track remains mixed stereo; do not advertise isolated stems unless the actual sender/plugin exposes and the receiver observes them. Real OBS/plugin track separation has not been tested in this environment. Unknown and duplicate publishers must not replace an active source. Consult the final input evidence before relying on the provisioning path.
 
@@ -74,6 +78,8 @@ Environment configuration:
 | `CARGO_BUILD_JOBS` | `2` in project scripts | Build concurrency |
 
 Run the daemon as an unprivileged service account with write access only to its state directory and the required media devices. The executable runs without a browser; closing the browser must not stop media. Send SIGTERM for graceful shutdown and recording finalization. A native in-process media/plugin crash can terminate the daemon; trusted registration is not a sandbox. Crash-damaged segments and gaps must remain visible, and restart recovery must not silently mark them decode-validated.
+
+Recorders now persist session metadata before capture and publish only confirmed closed fragments. Startup inventories raw MKVs even without a valid catalog, preserves raw bytes, and reports recovered/partial, decode validation, mapping and interruption gaps separately. Unknown wall/engine timing is labelled unknown. Clean-source generation intervals come from captured video/audio metadata, not the current connection. Restored outputs remain stopped; recovery never authorizes a public transmission.
 
 An administrator-reviewed Ubuntu service example is provided in `deploy/live-production.service`. It assumes a pre-created unprivileged account, a release build under `/opt/live-production`, native deployment dependencies and an authenticated HTTPS reverse proxy. It is not installed automatically, and the Ubuntu service/hardware profile remains unverified until exercised there.
 

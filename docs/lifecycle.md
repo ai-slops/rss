@@ -17,6 +17,10 @@ The native application additionally watches its owning supervisor's PID and proc
 
 `scripts/serve.sh`, `scripts/dev.sh`, shell media/output gates, the acceptance entrypoint, and browser runners use this ownership path. Smoke scripts build first and execute the native binary directly instead of treating Cargo as the application process. Browser runners close Playwright in `finally`; the supervisor also owns escaped browser descendants. There is no `nohup`/`setsid` application-launch path in project runners.
 
+Every `MediaEngine` now retains and joins its owner thread, for synthetic and SRT sources alike. This fixes a reproduced post-assertion native SRT teardown crash caused by process exit racing the media owner. Source handlers/probes are detached before the core pipeline enters NULL. The core graph does not wait for EOS; independent output owners are responsible for draining their muxers before coordinator shutdown.
+
+The operator-review fixes were validated in `var/internal-validation.TRI6kS`, a detached code checkout with independent binaries, bundle and state. The production supervisor/application identities `419348`/`419353` and application start ticks `36675901` remained unchanged, and its executable was not replaced or deleted. No automatic merge/deployment or service mutation was performed. Full internal evidence is in `docs/internal-gates-2026-10-27.md`.
+
 ## Regression
 
 ```sh

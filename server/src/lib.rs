@@ -14,6 +14,7 @@ mod coordinator_state;
 mod coordinator_take;
 pub mod editor;
 mod editor_export;
+mod editor_provenance;
 mod editor_timebase;
 pub mod error;
 pub mod media_bridge;

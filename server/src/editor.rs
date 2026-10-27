@@ -51,7 +51,15 @@ pub(crate) struct TrackTiming {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct EditorClockAnchor {
     pub(crate) engine_run_id: String,
-    pub(crate) mapping: live_production_media::protocol::EngineClockMapping,
+    pub(crate) mapping: EditorClockMapping,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct EditorClockMapping {
+    pub(crate) media_time: String,
+    pub(crate) wall_time: String,
+    pub(crate) uncertainty: String,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -161,7 +169,11 @@ impl EditorJournal {
     fn capture(&mut self, cursor: &str, occurred_at_ns: &str, snapshot: &Snapshot) {
         self.clock_anchors.push(EditorClockAnchor {
             engine_run_id: snapshot.engine_run_id.clone(),
-            mapping: snapshot.engine_clock.clone(),
+            mapping: EditorClockMapping {
+                media_time: snapshot.engine_clock.media_time.value().to_string(),
+                wall_time: snapshot.engine_clock.wall_time.value().to_string(),
+                uncertainty: snapshot.engine_clock.uncertainty.value().to_string(),
+            },
         });
         let scene = snapshot.program.applied_scene.clone();
         let track_corrections = snapshot

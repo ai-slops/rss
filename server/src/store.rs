@@ -1,21 +1,10 @@
 use crate::model::Project;
 use anyhow::Context;
 use rusqlite::{Connection, OptionalExtension, params};
-use serde::{Deserialize, Serialize};
 use std::path::Path;
 
 pub struct Store {
-    db: Connection,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Event {
-    pub cursor: String,
-    pub engine_run_id: String,
-    pub occurred_at_ns: String,
-    pub kind: String,
-    pub data: serde_json::Value,
+    pub(crate) db: Connection,
 }
 
 impl Store {
@@ -26,6 +15,8 @@ impl Store {
             CREATE TABLE IF NOT EXISTS project (id INTEGER PRIMARY KEY CHECK(id=1), body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS commands (id TEXT PRIMARY KEY, body TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS events (cursor INTEGER PRIMARY KEY AUTOINCREMENT, run TEXT NOT NULL, at TEXT NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS output_destinations (id TEXT PRIMARY KEY, url TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS ingest_credentials (source_id TEXT PRIMARY KEY, credential TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS plugin_storage (namespace TEXT NOT NULL, key TEXT NOT NULL, body TEXT NOT NULL, PRIMARY KEY(namespace,key));")?;
         Ok(Self { db })
     }
@@ -58,60 +49,6 @@ impl Store {
             .transpose()
     }
 
-    pub fn receipt(&self, id: &str, response: &serde_json::Value) -> anyhow::Result<()> {
-        self.db.execute(
-            "INSERT INTO commands(id,body) VALUES(?1,?2)",
-            params![id, serde_json::to_string(response)?],
-        )?;
-        self.db.execute(
-            "DELETE FROM commands WHERE rowid <= (SELECT MAX(rowid)-4096 FROM commands)",
-            [],
-        )?;
-        Ok(())
-    }
-
-    pub fn append(&self, event: &Event) -> anyhow::Result<String> {
-        self.db.execute(
-            "INSERT INTO events(run,at,kind,data) VALUES(?1,?2,?3,?4)",
-            params![
-                event.engine_run_id,
-                event.occurred_at_ns,
-                event.kind,
-                serde_json::to_string(&event.data)?
-            ],
-        )?;
-        Ok(self.db.last_insert_rowid().to_string())
-    }
-
-    pub fn cursor(&self) -> anyhow::Result<String> {
-        let cursor: i64 =
-            self.db
-                .query_row("SELECT COALESCE(MAX(cursor),0) FROM events", [], |row| {
-                    row.get(0)
-                })?;
-        Ok(cursor.to_string())
-    }
-
-    pub fn events(&self, after: i64) -> anyhow::Result<Vec<Event>> {
-        let mut query = self.db.prepare(
-            "SELECT cursor,run,at,kind,data FROM events WHERE cursor>?1 ORDER BY cursor LIMIT 512",
-        )?;
-        let mut rows = query.query([after])?;
-        let mut events = Vec::new();
-        while let Some(row) = rows.next()? {
-            let cursor: i64 = row.get(0)?;
-            let data: String = row.get(4)?;
-            events.push(Event {
-                cursor: cursor.to_string(),
-                engine_run_id: row.get(1)?,
-                occurred_at_ns: row.get(2)?,
-                kind: row.get(3)?,
-                data: serde_json::from_str(&data)?,
-            });
-        }
-        Ok(events)
-    }
-
     pub fn plugin_put(
         &self,
         namespace: &str,
@@ -119,6 +56,57 @@ impl Store {
         value: &serde_json::Value,
     ) -> anyhow::Result<()> {
         self.db.execute("INSERT INTO plugin_storage(namespace,key,body) VALUES(?1,?2,?3) ON CONFLICT(namespace,key) DO UPDATE SET body=excluded.body", params![namespace, key, serde_json::to_string(value)?])?;
+        Ok(())
+    }
+
+    pub fn destination_put(&self, id: &str, url: &str) -> anyhow::Result<()> {
+        self.db.execute(
+            "INSERT INTO output_destinations(id,url) VALUES(?1,?2) ON CONFLICT(id) DO UPDATE SET url=excluded.url",
+            params![id, url],
+        )?;
+        Ok(())
+    }
+
+    pub fn destination_get(&self, id: &str) -> anyhow::Result<Option<String>> {
+        self.db
+            .query_row(
+                "SELECT url FROM output_destinations WHERE id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(Into::into)
+    }
+
+    pub fn ingest_credential(&self, source_id: &str) -> anyhow::Result<String> {
+        if let Some(value) = self
+            .db
+            .query_row(
+                "SELECT credential FROM ingest_credentials WHERE source_id=?1",
+                [source_id],
+                |row| row.get(0),
+            )
+            .optional()?
+        {
+            return Ok(value);
+        }
+        let credential = format!(
+            "lp{}{}",
+            uuid::Uuid::new_v4().simple(),
+            uuid::Uuid::new_v4().simple()
+        );
+        self.db.execute(
+            "INSERT INTO ingest_credentials(source_id,credential) VALUES(?1,?2)",
+            params![source_id, credential],
+        )?;
+        Ok(credential)
+    }
+
+    pub fn delete_ingest_credential(&self, source_id: &str) -> anyhow::Result<()> {
+        self.db.execute(
+            "DELETE FROM ingest_credentials WHERE source_id=?1",
+            [source_id],
+        )?;
         Ok(())
     }
 
@@ -148,7 +136,11 @@ mod tests {
     fn configuration_survives_actual_database_reopen() {
         let directory = tempfile::tempdir().expect("temporary directory");
         let path = directory.path().join("project.sqlite");
-        let project = Project::empty();
+        let mut project = Project::empty();
+        project.plugin_settings.insert(
+            "unavailable-plugin".into(),
+            serde_json::json!({"future": 42}),
+        );
         {
             let mut store = Store::open(&path).expect("open database");
             store.save(&project).expect("save project");
@@ -160,6 +152,10 @@ mod tests {
         assert_eq!(restored.id, project.id);
         assert!(restored.outputs.is_empty());
         assert!(restored.audio_routes.is_empty());
+        assert_eq!(
+            restored.plugin_settings.get("unavailable-plugin"),
+            Some(&serde_json::json!({"future": 42}))
+        );
     }
 
     #[test]

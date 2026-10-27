@@ -19,6 +19,20 @@ use crate::{
 
 const MAXIMUM_MEDIA_CLIENTS: usize = 6;
 
+struct MediaLease {
+    media: MediaState,
+    stream: String,
+}
+impl Drop for MediaLease {
+    fn drop(&mut self) {
+        if let Some(track) = self.stream.strip_prefix("source-")
+            && let Some(outputs) = &self.media.outputs
+        {
+            outputs.release_source_audio(track);
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct MediaState {
     outputs: Option<Arc<PreviewOutputs>>,
@@ -88,36 +102,75 @@ async fn media_socket(
     upgrade: WebSocketUpgrade,
 ) -> Result<Response> {
     state.authorize(&headers).await?;
-    let port = state.media.port(&stream)?;
+    crate::media_signalling_policy::origin(
+        &headers,
+        std::env::var("LIVE_PRODUCTION_PUBLIC_ORIGIN")
+            .ok()
+            .as_deref(),
+    )?;
+    if let Some(track) = stream.strip_prefix("source-") {
+        let snapshot = state.coordinator.snapshot().await?;
+        if !snapshot
+            .project
+            .sources
+            .iter()
+            .flat_map(|source| &source.tracks)
+            .any(|source| source.kind == crate::model::TrackKind::Audio && source.id.0 == track)
+        {
+            return Err(AppError::Invalid(
+                "Select an existing source audio track to Listen.".into(),
+            ));
+        }
+    }
     let permit = state
         .media
         .clients
         .clone()
         .try_acquire_owned()
         .map_err(|_| AppError::Unavailable("The browser media viewer budget is full.".into()))?;
-    Ok(upgrade.on_upgrade(move |browser| async move {
-        let _permit = permit;
-        if let Err(error) = relay(browser, port).await {
-            tracing::warn!(%error, %stream, "browser media signalling ended");
-        }
-    }))
+    let port = state.media.port(&stream)?;
+    let lease = MediaLease {
+        media: state.media.clone(),
+        stream: stream.clone(),
+    };
+    Ok(upgrade
+        .max_frame_size(65536)
+        .max_message_size(131072)
+        .on_upgrade(move |browser| async move {
+            let _permit = permit;
+            let _lease = lease;
+            if let Err(error) = relay(browser, port, (state, headers)).await {
+                tracing::warn!(%error, %stream, "browser media signalling ended");
+            }
+        }))
 }
 
-async fn relay(mut browser: axum::extract::ws::WebSocket, port: u16) -> anyhow::Result<()> {
+async fn relay(
+    mut browser: axum::extract::ws::WebSocket,
+    port: u16,
+    authorization: (AppState, HeaderMap),
+) -> anyhow::Result<()> {
     let endpoint = format!("ws://127.0.0.1:{port}");
     let (upstream, _) = tokio::time::timeout(Duration::from_secs(3), connect_async(endpoint))
         .await
         .map_err(|_| anyhow::anyhow!("signalling connection timed out"))??;
     let (mut upstream_write, mut upstream_read) = upstream.split();
+    let mut budget = crate::media_signalling_policy::SessionBudget::default();
+    let mut expiry = tokio::time::interval(Duration::from_secs(1));
     loop {
         tokio::select! {
+            _ = expiry.tick() => { if authorization.0.authorize(&authorization.1).await.is_err() { let _ = browser.close().await; return Ok(()); } },
             browser_message = browser.recv() => match browser_message {
-                Some(Ok(message)) => upstream_write.send(to_upstream(message)).await?,
+                Some(Ok(message)) => {
+                    if let Message::Text(text) = &message { budget.admit(text)?; }
+                    if matches!(message, Message::Binary(_)) { anyhow::bail!("binary browser signalling is not supported"); }
+                    upstream_write.send(to_upstream(message)).await?
+                },
                 Some(Err(error)) => return Err(error.into()),
                 None => return Ok(()),
             },
             upstream_message = upstream_read.next() => match upstream_message {
-                Some(Ok(message)) => browser.send(to_browser(message)?).await?,
+                Some(Ok(message)) => { if let tungstenite::Message::Text(text) = &message { budget.observe(text); } browser.send(to_browser(message)?).await? },
                 Some(Err(error)) => return Err(error.into()),
                 None => return Ok(()),
             },

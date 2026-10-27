@@ -28,7 +28,7 @@ use crate::{
 #[derive(Clone)]
 pub struct AppState {
     auth: Arc<Mutex<Auth>>,
-    coordinator: Coordinator,
+    pub(crate) coordinator: Coordinator,
     pub(crate) media: crate::routes_media::MediaState,
 }
 
@@ -104,11 +104,15 @@ async fn source_publishing_endpoint(
     State(state): State<AppState>,
     Path(id): Path<String>,
     headers: HeaderMap,
-) -> Result<Json<serde_json::Value>> {
+) -> Result<Response> {
     state.authorize(&headers).await?;
-    Ok(Json(
-        state.coordinator.source_publishing_endpoint(id).await?,
-    ))
+    let mut response =
+        Json(state.coordinator.source_publishing_endpoint(id).await?).into_response();
+    response.headers_mut().insert(
+        header::CACHE_CONTROL,
+        HeaderValue::from_static("no-store, private"),
+    );
+    Ok(response)
 }
 
 async fn provision_destination(

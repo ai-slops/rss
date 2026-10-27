@@ -1,6 +1,9 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub use crate::protocol_output::{OutputObservedState, OutputSnapshot};
+pub use crate::protocol_runtime::*;
+
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum IdentifierError {
     #[error("identifier must contain 1 to 64 ASCII letters, digits, '.', '-', or '_'")]
@@ -42,7 +45,9 @@ macro_rules! identifier {
 identifier!(CommandId);
 identifier!(EngineRunId);
 identifier!(OutputId);
+identifier!(PlacementId);
 identifier!(ProgramRevision);
+identifier!(SourceId);
 identifier!(TrackId);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -103,6 +108,12 @@ pub struct Command {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum CommandKind {
+    AddSource {
+        source: SourceSpec,
+    },
+    ConfigureSource {
+        source: SourceSpec,
+    },
     ApplyTiming {
         program_holdback: Milliseconds,
         video_correction: Milliseconds,
@@ -112,6 +123,17 @@ pub enum CommandKind {
         program_holdback: Milliseconds,
         corrections: Vec<TrackCorrection>,
     },
+    RemoveSource {
+        source_id: SourceId,
+    },
+    ReconnectSource {
+        source_id: SourceId,
+    },
+    PrepareComposition {
+        revision: ProgramRevision,
+        placements: Vec<CompositionPlacement>,
+    },
+    QueryRuntime,
     ApplyAudioMix {
         routes: Vec<AudioMixRoute>,
     },
@@ -177,6 +199,8 @@ pub enum EventKind {
     Applied {
         discontinuity: bool,
         #[serde(default, skip_serializing_if = "Option::is_none")]
+        media_at: Option<Nanoseconds>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
         program_revision: Option<ProgramRevision>,
     },
     Failed {
@@ -188,24 +212,10 @@ pub enum EventKind {
     Snapshot {
         outputs: Vec<OutputSnapshot>,
     },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct OutputSnapshot {
-    pub id: OutputId,
-    pub desired_running: bool,
-    pub observed: OutputObservedState,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum OutputObservedState {
-    Failed,
-    Finalizing,
-    Reconnecting,
-    Running,
-    Starting,
-    Stopped,
+    RuntimeSnapshot {
+        sources: Vec<SourceSnapshot>,
+        program: ProgramProgress,
+    },
 }
 
 macro_rules! decimal_u64_serde {

@@ -42,7 +42,7 @@ export function parseSourceForm(draft: SourceFormDraft): SourceFormResult {
   if (!parsed.success) return { kind: "invalid", message: parsed.error.issues[0]?.message ?? "Review the source values." }
   switch (parsed.data.kind) {
     case "srt":
-      return { kind: "valid", payload: { name: parsed.data.name, adapter: { kind: "srt", port: parsed.data.port, bufferMs: parsed.data.bufferMs } } }
+      return { kind: "valid", payload: { name: parsed.data.name, adapter: { kind: "srt", bindAddress: "0.0.0.0", port: parsed.data.port, bufferMs: parsed.data.bufferMs } } }
     case "synthetic":
       return { kind: "valid", payload: { name: parsed.data.name, adapter: { kind: "synthetic", pattern: parsed.data.pattern, frequencyHz: parsed.data.frequencyHz } } }
   }

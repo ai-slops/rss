@@ -1,5 +1,7 @@
 import { Ear, Plus, Trash, VideoCamera } from "@phosphor-icons/react"
 import { useState } from "react"
+import { getSourcePublishingEndpoint } from "../api/client"
+import type { PublishingEndpoint } from "../api/runtimeSchema"
 import type { Snapshot } from "../api/schema"
 import type { NewSourcePayload } from "./InputLibraryForms"
 import { ConfigureSourceForm, CreateSourceForm } from "./InputLibraryForms"
@@ -40,6 +42,8 @@ function receiptFailure(receipt: OperatorCommandReceipt | null): string | null {
 export function InputLibrary({ snapshot, disabled, listeningTrackId, onListen, onCommand }: InputLibraryProps) {
   const [expandedSourceId, setExpandedSourceId] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [publishing, setPublishing] = useState<PublishingEndpoint | null>(null)
+  const [publishingError, setPublishingError] = useState<string | null>(null)
   const scene = snapshot.project.scenes.find((candidate) => candidate.id === snapshot.preview.sceneId)
 
   const execute = async (input: { readonly kind: "source.create" | "source.configure" | "source.delete" | "scene.item.add"; readonly targetId: string; readonly payload: Readonly<Record<string, unknown>>; readonly revision?: string }): Promise<void> => {
@@ -63,10 +67,20 @@ export function InputLibrary({ snapshot, disabled, listeningTrackId, onListen, o
             <div className="production-setup__actions">
               <Button disabled={disabled || scene === undefined || !source.tracks.some((track) => track.kind === "video")} icon={Plus} onClick={() => { if (scene === undefined) return; const request = videoPlacementRequest({ sourceId: source.id, sceneId: scene.id, sceneRevision: scene.revision }); void execute({ kind: "scene.item.add", targetId: request.targetId, payload: request.payload, revision: request.expectedRevision }) }} tone="preview">Add video to Preview</Button>
               <Button disabled={disabled} onClick={() => setExpandedSourceId(expandedSourceId === source.id ? null : source.id)}>{expandedSourceId === source.id ? "Close configuration" : "Configure source"}</Button>
+              {source.adapter.kind === "srt" ? <Button disabled={disabled} onClick={() => {
+                if (publishing?.sourceId === source.id) { setPublishing(null); setPublishingError(null); return }
+                setPublishingError(null)
+                void getSourcePublishingEndpoint(source.id).then(setPublishing).catch((caught: unknown) => {
+                  if (caught instanceof Error) setPublishingError(caught.message)
+                  else throw caught
+                })
+              }}>{publishing?.sourceId === source.id ? "Hide publishing credentials" : "Show publishing credentials"}</Button> : null}
               <Button disabled={disabled || source.dependencyCount > 0} icon={Trash} onClick={() => void execute({ kind: "source.delete", targetId: source.id, payload: {}, revision: snapshot.project.revision })} tone="danger">Delete source</Button>
             </div>
             {source.dependencyCount > 0 ? <p className="production-setup__hint">Remove all {source.dependencyCount} scene placements before deleting this source.</p> : null}
             {expandedSourceId === source.id ? <ConfigureSourceForm disabled={disabled} key={`${source.id}-${source.adapter.kind}`} onSubmit={(payload) => execute({ kind: "source.configure", targetId: source.id, payload: { source: buildSourceConfiguration(source, payload) }, revision: snapshot.project.revision })} source={source} /> : null}
+            {publishing?.sourceId === source.id ? <div className="production-setup__credentials"><strong>Scoped SRT publishing credentials</strong><p>Keep these values private. They authorize only this input.</p><dl><div><dt>Listener</dt><dd><code>{publishing.bindAddress}:{publishing.port}</code></dd></div><div><dt>Latency</dt><dd>{publishing.bufferMs} ms</dd></div><div><dt>Stream ID</dt><dd><code>{publishing.streamId}</code></dd></div><div><dt>Passphrase</dt><dd><code>{publishing.passphrase}</code></dd></div><div><dt>PB key length</dt><dd>{publishing.pbkeylen}</dd></div></dl></div> : null}
+            {publishingError === null ? null : <p className="production-setup__error" role="alert">{publishingError}</p>}
           </article>
         ))}
       </section>

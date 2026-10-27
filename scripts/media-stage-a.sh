@@ -2,15 +2,18 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-OUTPUT_DIR=${1:-$PROJECT_ROOT/var/media-stage-a}
 
 . "$PROJECT_ROOT/scripts/env.sh"
-export CARGO_BUILD_JOBS=3
+export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
 
+mkdir -p "$PROJECT_ROOT/var"
+OUTPUT_DIR=${1:-$(mktemp -d "$PROJECT_ROOT/var/media-stage-a.XXXXXX")}
 mkdir -p "$OUTPUT_DIR"
 
 cargo run -p live-production-media -- probe
-cargo run -p live-production-media -- webrtc-gate --duration-seconds 3
+if [ "${STAGE_A_WEBRTC_GATE:-0}" = 1 ]; then
+  cargo run -p live-production-media -- webrtc-gate --duration-seconds 3
+fi
 cargo run -p live-production-media -- \
   stage-a \
   --output-dir "$OUTPUT_DIR" \

@@ -2,16 +2,24 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-OUTPUT_DIR=${1:-$PROJECT_ROOT/var/media-network-gates}
-SRT_PORT=${SRT_PORT:-19360}
-RTMP_PORT=${RTMP_PORT:-19350}
+SRT_PORT=${SRT_PORT:-$(node "$PROJECT_ROOT/scripts/free-port.mjs" udp)}
+RTMP_PORT=${RTMP_PORT:-$(node "$PROJECT_ROOT/scripts/free-port.mjs" tcp)}
 
 . "$PROJECT_ROOT/scripts/env.sh"
 
+mkdir -p "$PROJECT_ROOT/var"
+OUTPUT_DIR=${1:-$(mktemp -d "$PROJECT_ROOT/var/media-network.XXXXXX")}
 mkdir -p "$OUTPUT_DIR"
+srt_receiver=
+rtmp_receiver=
+cleanup() {
+  if [ -n "$srt_receiver" ]; then kill "$srt_receiver" 2>/dev/null || true; fi
+  if [ -n "$rtmp_receiver" ]; then kill "$rtmp_receiver" 2>/dev/null || true; fi
+}
+trap cleanup EXIT HUP INT TERM
 
 timeout 12 gst-launch-1.0 -e -q \
-  srtsrc uri="srt://:$SRT_PORT?mode=listener" wait-for-connection=true \
+  srtsrc uri="srt://127.0.0.1:$SRT_PORT?mode=listener" wait-for-connection=true \
   ! filesink location="$OUTPUT_DIR/srt-received.ts" &
 srt_receiver=$!
 sleep 1
@@ -27,10 +35,12 @@ timeout -s INT 5 gst-launch-1.0 -e -q \
   audiotestsrc is-live=true \
   ! audioconvert \
   ! audioresample \
+  ! audio/x-raw,rate=48000,channels=2 \
   ! voaacenc bitrate=128000 \
   ! aacparse \
   ! mux. || test "$?" -eq 124
 wait "$srt_receiver" || test "$?" -eq 124
+srt_receiver=
 
 timeout 15 ffmpeg \
   -nostdin \
@@ -54,12 +64,15 @@ timeout -s INT 5 gst-launch-1.0 -e -q \
   audiotestsrc is-live=true \
   ! audioconvert \
   ! audioresample \
+  ! audio/x-raw,rate=48000,channels=2 \
   ! voaacenc bitrate=128000 \
   ! aacparse \
   ! mux. || test "$?" -eq 124
 wait "$rtmp_receiver" || true
+rtmp_receiver=
 
 for media_file in "$OUTPUT_DIR/srt-received.ts" "$OUTPUT_DIR/rtmp-received.flv"; do
+  test "$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate,channels -of csv=p=0 "$media_file" | sed -n '1p')" = "48000,2"
   ffprobe \
     -v error \
     -show_entries format=filename,duration,size \

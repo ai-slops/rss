@@ -43,11 +43,13 @@ export const sceneSchema = z.object({
   items: z.array(sceneItemSchema),
 })
 
+export const trackConnectionSchema = z.enum(["connected", "connecting", "missing"])
+
 const trackSchema = z.object({
   id,
   kind: z.enum(["video", "audio"]),
   correctionMs: z.number().int(),
-  connection: z.enum(["active", "idle", "missing"]).default("idle"),
+  connection: trackConnectionSchema.default("connecting"),
   format: z.string().default("Unknown"),
   bufferMs: z.number().int().nonnegative().default(0),
   lateFrames: z.number().int().nonnegative().default(0),
@@ -66,14 +68,14 @@ const sourceSchema = z.object({
   dependencyCount: z.number().int().nonnegative().default(0),
 })
 
-const audioRouteSchema = z.object({
+export const audioRouteSchema = z.object({
   trackId: id,
   gainDb: z.number(),
   muted: z.boolean(),
   routed: z.boolean(),
-  inputPeakDb: z.number().default(-60),
-  outputPeakDb: z.number().default(-60),
-  clipping: z.boolean().default(false),
+  inputPeakDb: z.number().nullable(),
+  outputPeakDb: z.number().nullable(),
+  clipping: z.boolean().nullable(),
 })
 
 const outputSchema = z.object({
@@ -99,6 +101,8 @@ const recordingSchema = z.object({
   id,
   outputId: id,
   name: z.string(),
+  path: z.string(),
+  tapPoint: z.enum(["program", "clean_source"]),
   startNs: z.string(),
   endNs: z.string().nullable(),
   bytes: z.string(),
@@ -146,6 +150,7 @@ export const snapshotSchema = z.object({
   }),
   preview: z.object({
     sceneId: id,
+    scene: sceneSchema,
     revision,
     renderedRevision: revision.nullable(),
     visibleRevision: revision.nullable(),
@@ -153,6 +158,7 @@ export const snapshotSchema = z.object({
   }),
   program: z.object({
     sceneId: id,
+    appliedScene: sceneSchema,
     sceneRevision: revision,
     programRevision: revision,
     appliedAtNs: z.string(),
@@ -172,6 +178,7 @@ export const commandResponseSchema = z.object({
   appliedAt: z.string().optional(),
   actualRevision: revision.optional(),
   reason: z.string().optional(),
+  pluginResult: z.unknown().optional(),
 })
 
 export const errorResponseSchema = z.object({ code: z.string(), message: z.string() })
@@ -184,6 +191,7 @@ export const commandKindSchema = z.enum([
   "scene.delete",
   "scene.save",
   "scene.cue",
+  "scene.copyCued",
   "scene.take",
   "scene.item.add",
   "program.cuePrevious",
@@ -201,6 +209,7 @@ export const commandKindSchema = z.enum([
   "output.stop",
   "output.delete",
   "plugin.command",
+  "asset.upload",
 ])
 
 export const errorCodeSchema = z.enum([

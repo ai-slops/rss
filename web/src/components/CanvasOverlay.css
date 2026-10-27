@@ -1,0 +1,64 @@
+.canvas-overlay {
+  block-size: 100%;
+  inline-size: 100%;
+  inset: 0;
+  position: absolute;
+  touch-action: none;
+}
+
+.canvas-overlay__background,
+.canvas-overlay__hit {
+  fill: transparent;
+}
+
+.canvas-overlay__hit {
+  cursor: move;
+  pointer-events: all;
+}
+
+.canvas-overlay__hit.is-locked {
+  cursor: pointer;
+}
+
+.canvas-overlay__outline {
+  fill: transparent;
+  pointer-events: none;
+  stroke: var(--color-preview-strong);
+  stroke-dasharray: var(--space-2) var(--space-1);
+  stroke-width: calc(var(--space-1) / 2);
+  vector-effect: non-scaling-stroke;
+}
+
+.canvas-overlay__outline.is-pending {
+  stroke: var(--color-warning);
+}
+
+.canvas-overlay__handle-shell {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.canvas-overlay__handle {
+  background: var(--color-surface-sunken);
+  block-size: 100%;
+  border: calc(var(--space-1) / 2) solid var(--color-preview-strong);
+  border-radius: 50%;
+  inline-size: 100%;
+  padding: 0;
+  pointer-events: all;
+}
+
+.canvas-overlay__handle:focus-visible {
+  border-color: var(--color-text-primary);
+}
+
+.canvas-overlay__pending-label {
+  dominant-baseline: hanging;
+  fill: var(--color-warning);
+  font: 650 var(--type-label)/1.2 "IBM Plex Mono", monospace;
+  paint-order: stroke;
+  pointer-events: none;
+  stroke: var(--color-canvas);
+  stroke-width: var(--space-1);
+  transform: translate(var(--space-1), var(--space-1));
+}

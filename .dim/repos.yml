@@ -1,0 +1,16 @@
+schemaVersion: 1
+repositories:
+  main:
+    ref: main
+    defaultBranch: main
+    protect: [main, development]
+    branches:
+      main: {review: true}
+      development: {review: false}
+policy:
+  code-review:
+    requiredReviewerIds: []
+    pathReviewerRules:
+      - pathPrefix: .dim/
+        reviewerIds: [mjy]
+  merge-policy: {}

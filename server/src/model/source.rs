@@ -21,6 +21,8 @@ pub enum SourceAdapter {
         frequency_hz: u32,
     },
     Srt {
+        #[serde(rename = "bindAddress", default = "default_srt_bind_address")]
+        bind_address: String,
         #[serde(default = "default_srt_port")]
         port: u16,
         #[serde(rename = "bufferMs", default = "default_srt_buffer_ms")]
@@ -71,4 +73,8 @@ const fn default_srt_port() -> u16 {
 }
 const fn default_srt_buffer_ms() -> u32 {
     120
+}
+
+fn default_srt_bind_address() -> String {
+    "0.0.0.0".to_owned()
 }

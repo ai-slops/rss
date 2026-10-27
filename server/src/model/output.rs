@@ -67,6 +67,14 @@ pub struct Recording {
     pub tap_point: String,
     pub start_ns: String,
     pub end_ns: Option<String>,
+    #[serde(default)]
+    pub engine_run_id: Option<String>,
+    #[serde(default)]
+    pub media_start_ns: Option<String>,
+    #[serde(default)]
+    pub media_end_ns: Option<String>,
+    #[serde(default)]
+    pub media_uncertainty_ns: Option<String>,
     pub bytes: String,
     pub validation: String,
     pub sha256: Option<String>,

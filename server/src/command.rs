@@ -29,6 +29,8 @@ pub enum Action {
     SceneDelete(Empty),
     #[serde(rename = "scene.cue")]
     SceneCue(Empty),
+    #[serde(rename = "scene.copyCued")]
+    SceneCopyCued(Name),
     #[serde(rename = "scene.take", alias = "program.take")]
     SceneTake(Take),
     #[serde(rename = "scene.item.add")]

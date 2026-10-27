@@ -9,11 +9,7 @@ Program recording consumes the typed, engine-run-namespaced
 pre-timing/pre-Program `live-<engine-run>-clean-{video,audio}-v1-<track-id>` taps. A restarted
 engine therefore cannot cross-connect an old output consumer to a new graph.
 
-Recording owners encode H.264/AAC into bounded Matroska segments. Stop drains EOS, waits for
-finalization, computes SHA-256, fully decodes every closed segment with GStreamer, writes a
-`catalog.json`, and exposes stable catalog IDs plus capture bounds through the coordinator
-snapshot. An empty recorder stopped before its first encoded buffer stops without inventing a
-recording.
+Recording owners encode H.264/AAC into bounded Matroska segments. Session identity/clock metadata is atomically persisted before capture. Actual fragment-closed messages drive atomic catalog publication while recording; stop separately drains/finalizes the branch. Checksums, decode evidence, captured provenance and mappings are exposed through the coordinator. An empty or interrupted raw file is retained as partial evidence, never invented as a successful recording.
 
 Network owners encode the same native Program taps to FLV and pipe them to an independently
 supervised FFmpeg RTMPS publisher. Publisher progress is parsed from FFmpeg's machine-readable
@@ -27,11 +23,13 @@ clients are sanitized.
 
 Duplicate starts are idempotent and keep one owner/session. On graceful daemon shutdown, the
 coordinator sends an explicit shutdown request, recorders drain/finalize, publisher children stop,
-and every owner thread is joined. On restart, completed catalogs are loaded from disk, while every
+and every owner thread is joined. On restart, raw files are discovered even with missing, corrupt or stale catalogs; recovered/partial state and interruption gaps remain visible. Every
 restored output has desired and actual state `stopped`; no public publisher is resumed merely
 because its configuration exists.
 
 ## Exact verification commands
+
+The current complete acceptance, started **2026-10-27 22:48:49 UTC** against `dea4906` in detached `var/internal-validation.TRI6kS`, passed including the now-required real abrupt-kill gate. It recovered two confirmed closed fragments and a visible zero-byte partial tail, preserved all three raw hashes, restored outputs stopped and exported all three entries. Exact artifacts, raw hashes and commands are in [internal gate evidence](internal-gates-2026-10-27.md). The detailed paths below are earlier historical measurements, not the current run.
 
 ```sh
 . scripts/env.sh

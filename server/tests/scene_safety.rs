@@ -134,3 +134,18 @@ fn locked_placement_rejects_removal_but_allows_explicit_visibility() {
     );
     assert!(result.is_ok());
 }
+
+#[test]
+fn locked_placement_rejects_crop_changes() {
+    let mut project = project_with_camera();
+    let current = project.scenes.first_mut().expect("scene");
+    current.items.first_mut().expect("placement").locked = true;
+    let mut changed = current.clone();
+    changed.items.first_mut().expect("placement").crop.left = 0.1;
+    let command = save_command(changed.clone(), "1");
+    let result = scene_commands::save(&mut project, &command, &ScenePayload { scene: changed });
+    assert!(
+        result.is_err(),
+        "locked crop must remain pinned until explicitly unlocked"
+    );
+}

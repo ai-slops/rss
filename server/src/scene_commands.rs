@@ -43,11 +43,13 @@ pub fn save(project: &mut Project, command: &Command, payload: &ScenePayload) ->
         };
         if next.locked
             && (position != index
-                || serde_json::to_value(&next.rect).map_err(anyhow::Error::from)?
-                    != serde_json::to_value(&item.rect).map_err(anyhow::Error::from)?)
+                || next.rect != item.rect
+                || next.crop != item.crop
+                || next.fit != item.fit
+                || next.opacity != item.opacity)
         {
             return Err(AppError::Invalid(
-                "Unlock the placement before moving or resizing it.".into(),
+                "Unlock the placement before changing its transform or order.".into(),
             ));
         }
     }

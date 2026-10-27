@@ -24,7 +24,7 @@ pub struct SceneItem {
     pub content: Content,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Rect {
     pub x: f64,
     pub y: f64,
@@ -32,7 +32,7 @@ pub struct Rect {
     pub height: f64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Crop {
     pub left: f64,
     pub top: f64,
@@ -40,7 +40,7 @@ pub struct Crop {
     pub bottom: f64,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Fit {
     Contain,

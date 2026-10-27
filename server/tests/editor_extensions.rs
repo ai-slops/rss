@@ -193,6 +193,12 @@ async fn editor_export_reconciles_real_program_recording() {
     assert!(!inventory.is_empty());
     assert!(inventory.iter().all(|media| media["tapPoint"] == "program"));
     assert!(inventory.iter().all(|media| {
+        media["sourceId"].is_null()
+            && media["recording"]["provenance"]
+                .as_array()
+                .is_some_and(Vec::is_empty)
+    }));
+    assert!(inventory.iter().all(|media| {
         media["recording"]["path"]
             .as_str()
             .is_some_and(|path| !path.is_empty())

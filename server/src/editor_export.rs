@@ -2,11 +2,9 @@ use serde::Serialize;
 
 use crate::{
     editor::{EditorGap, EditorJournal, EditorObservation, TrackTiming},
-    editor_timebase::{
-        EditorIssue, EditorTimebase, FileTimeMapping, file_time_mapping, has_clock_mapping,
-        timebase,
-    },
-    model::{Id, OutputAdapter, Recording, Scene},
+    editor_provenance::{EditorMedia, media_inventory},
+    editor_timebase::{EditorIssue, EditorTimebase, has_clock_mapping, timebase},
+    model::{Id, Recording, Scene},
     snapshot::{AudioRouteSnapshot, Snapshot},
 };
 
@@ -27,17 +25,6 @@ pub struct EditorPackage {
     gaps: Vec<EditorGap>,
     issues: Vec<EditorIssue>,
     reconstruction: &'static str,
-}
-
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct EditorMedia {
-    recording: Recording,
-    tap_point: String,
-    source_id: Option<Id>,
-    source_continuity_generation: Option<String>,
-    interval_clock_domain: &'static str,
-    file_time_mapping: Option<FileTimeMapping>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -89,7 +76,7 @@ pub(crate) fn build(journal: &EditorJournal, snapshot: &Snapshot) -> anyhow::Res
         .engine_run_id
         .clone()
         .ok_or_else(|| anyhow::anyhow!("Editor session has no engine identity."))?;
-    let (media_inventory, program_reference, all_media_mapped) = media(snapshot, journal);
+    let (media_inventory, program_reference, all_media_mapped) = media_inventory(snapshot, journal);
     let mut issues = Vec::new();
     if !has_clock_mapping(journal) {
         issues.push(EditorIssue::MissingClockMapping);
@@ -103,7 +90,7 @@ pub(crate) fn build(journal: &EditorJournal, snapshot: &Snapshot) -> anyhow::Res
     if snapshot
         .recordings
         .iter()
-        .any(|recording| recording.tap_point == "clean_source")
+        .any(|recording| recording.tap_point == "clean_source" && recording.provenance.is_empty())
     {
         issues.push(EditorIssue::UnknownSourceGeneration);
     }
@@ -138,49 +125,6 @@ pub(crate) fn build(journal: &EditorJournal, snapshot: &Snapshot) -> anyhow::Res
         issues,
         reconstruction: "approximate",
     })
-}
-
-fn media(
-    snapshot: &Snapshot,
-    journal: &EditorJournal,
-) -> (Vec<EditorMedia>, Option<Recording>, bool) {
-    let mut inventory = Vec::new();
-    let mut program_reference = None;
-    let mut all_mapped = true;
-    for recording in &snapshot.recordings {
-        let adapter = snapshot
-            .project
-            .outputs
-            .iter()
-            .find(|output| output.id == recording.output_id)
-            .map(|output| &output.adapter);
-        let source_id = match adapter {
-            Some(OutputAdapter::ProgramRecording { .. }) => {
-                program_reference = Some(recording.clone());
-                None
-            }
-            Some(OutputAdapter::SourceRecording { source_id, .. }) => Some(source_id.clone()),
-            Some(OutputAdapter::Rtmps { .. }) | None => None,
-        };
-        if recording.tap_point == "program" {
-            program_reference = Some(recording.clone());
-        }
-        let file_time_mapping = file_time_mapping(recording, journal);
-        all_mapped &= file_time_mapping.is_some();
-        inventory.push(EditorMedia {
-            recording: recording.clone(),
-            tap_point: recording.tap_point.clone(),
-            source_id,
-            source_continuity_generation: None,
-            interval_clock_domain: if file_time_mapping.is_some() {
-                "engineRunPtsNs"
-            } else {
-                "unknown"
-            },
-            file_time_mapping,
-        });
-    }
-    (inventory, program_reference, all_mapped)
 }
 
 fn recording_gaps(journal: &EditorJournal, snapshot: &Snapshot) -> Vec<EditorGap> {

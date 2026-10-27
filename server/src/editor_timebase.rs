@@ -1,7 +1,7 @@
 use serde::Serialize;
 
 use crate::{
-    editor::{EditorClockAnchor, EditorJournal},
+    editor::{EditorClockAnchor, EditorClockMapping, EditorJournal},
     model::Recording,
 };
 
@@ -52,16 +52,16 @@ pub(crate) const fn unresolved_timebase() -> EditorTimebase {
 
 pub(crate) fn resolved_timebase(
     engine_run_id: &str,
-    mapping: &live_production_media::protocol::EngineClockMapping,
+    mapping: &EditorClockMapping,
 ) -> EditorTimebase {
     EditorTimebase {
         media_clock_domain: "engineRunPtsNs",
         wall_clock_domain: "unixEpochNs",
         mapping: Some(ClockMapping {
             engine_run_id: engine_run_id.to_owned(),
-            media_pts_ns: mapping.media_time.value().to_string(),
-            wall_time_ns: mapping.wall_time.value().to_string(),
-            bound_ns: mapping.uncertainty.value().to_string(),
+            media_pts_ns: mapping.media_time.clone(),
+            wall_time_ns: mapping.wall_time.clone(),
+            bound_ns: mapping.uncertainty.clone(),
         }),
     }
 }
@@ -95,10 +95,10 @@ pub(crate) fn file_time_mapping(
         engine_run_id: anchor.engine_run_id.clone(),
         media_start_ns: media_start_ns.to_string(),
         media_end_ns: media_end_ns.to_string(),
-        wall_start_ns: media_to_wall(&anchor.mapping, media_start_ns).to_string(),
-        wall_end_ns: media_to_wall(&anchor.mapping, media_end_ns).to_string(),
+        wall_start_ns: media_to_wall(&anchor.mapping, media_start_ns)?.to_string(),
+        wall_end_ns: media_to_wall(&anchor.mapping, media_end_ns)?.to_string(),
         uncertainty_ns: media_uncertainty_ns
-            .saturating_add(anchor.mapping.uncertainty.value())
+            .saturating_add(anchor.mapping.uncertainty.parse::<u64>().ok()?)
             .to_string(),
     })
 }
@@ -111,20 +111,13 @@ fn clock_anchor(journal: &EditorJournal) -> Option<&EditorClockAnchor> {
         .find(|anchor| anchor.engine_run_id == journal.engine_run_id.as_deref().unwrap_or_default())
 }
 
-fn media_to_wall(
-    anchor: &live_production_media::protocol::EngineClockMapping,
-    media_time_ns: u64,
-) -> u64 {
-    if media_time_ns >= anchor.media_time.value() {
-        anchor
-            .wall_time
-            .value()
-            .saturating_add(media_time_ns - anchor.media_time.value())
+fn media_to_wall(anchor: &EditorClockMapping, media_time_ns: u64) -> Option<u64> {
+    let anchor_media = anchor.media_time.parse::<u64>().ok()?;
+    let anchor_wall = anchor.wall_time.parse::<u64>().ok()?;
+    if media_time_ns >= anchor_media {
+        Some(anchor_wall.saturating_add(media_time_ns - anchor_media))
     } else {
-        anchor
-            .wall_time
-            .value()
-            .saturating_sub(anchor.media_time.value() - media_time_ns)
+        Some(anchor_wall.saturating_sub(anchor_media - media_time_ns))
     }
 }
 
@@ -135,7 +128,6 @@ mod tests {
         editor::EditorClockAnchor,
         model::{Id, Recording},
     };
-    use live_production_media::protocol::{EngineClockMapping, Nanoseconds};
 
     #[test]
     fn file_mapping_rejects_mismatched_engine_run() -> anyhow::Result<()> {
@@ -152,10 +144,10 @@ mod tests {
         }))?;
         journal.clock_anchors.push(EditorClockAnchor {
             engine_run_id: "run-a".into(),
-            mapping: EngineClockMapping {
-                media_time: Nanoseconds::new(10),
-                wall_time: Nanoseconds::new(100),
-                uncertainty: Nanoseconds::new(1),
+            mapping: EditorClockMapping {
+                media_time: "10".into(),
+                wall_time: "100".into(),
+                uncertainty: "1".into(),
             },
         });
         let recording = Recording {
@@ -164,6 +156,9 @@ mod tests {
             name: "legacy".into(),
             path: "legacy.mkv".into(),
             tap_point: "program".into(),
+            session_id: "legacy-session".into(),
+            recovery_status: "complete".into(),
+            mapping_status: "mapped".into(),
             start_ns: "100".into(),
             end_ns: Some("200".into()),
             engine_run_id: Some("run-b".into()),
@@ -174,6 +169,8 @@ mod tests {
             validation: "decoded".into(),
             sha256: None,
             gaps: Vec::new(),
+            provenance: Vec::new(),
+            provenance_gaps: Vec::new(),
         };
         assert!(file_time_mapping(&recording, &journal).is_none());
         Ok(())

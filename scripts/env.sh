@@ -22,6 +22,8 @@ export PKG_CONFIG_LIBDIR="$LIVE_PRODUCTION_SYSROOT/usr/lib/pkgconfig:$LIVE_PRODU
 export GST_PLUGIN_PATH="$LIVE_PRODUCTION_SYSROOT/usr/lib/gstreamer-1.0"
 export GST_PLUGIN_SCANNER="$LIVE_PRODUCTION_SYSROOT/usr/libexec/gstreamer-1.0/gst-plugin-scanner"
 export GST_REGISTRY="$LIVE_PRODUCTION_ROOT/.tools/cache/gstreamer-registry.bin"
+export GIO_USE_NETWORK_MONITOR=base
+export GSETTINGS_BACKEND=memory
 export FONTCONFIG_PATH="$LIVE_PRODUCTION_SYSROOT/etc/fonts"
 export XDG_DATA_DIRS="$LIVE_PRODUCTION_SYSROOT/usr/share${XDG_DATA_DIRS:+:$XDG_DATA_DIRS}"
 export SSL_CERT_FILE="$LIVE_PRODUCTION_SYSROOT/etc/ssl/certs/ca-certificates.crt"
@@ -29,5 +31,9 @@ export CARGO_HOME="$LIVE_PRODUCTION_ROOT/.tools/cargo"
 export CC="$LIVE_PRODUCTION_ROOT/.tools/bin/cc"
 export CXX="$LIVE_PRODUCTION_ROOT/.tools/bin/c++"
 export AR="$LIVE_PRODUCTION_SYSROOT/usr/bin/ar"
+export RUST_LOG="${RUST_LOG:-info},gst_plugin_webrtc_signalling=warn"
+if [ "${LD_PRELOAD:-}" = /lib/libgcompat.so.0 ] || [ "${LD_PRELOAD:-}" = libgcompat.so.0 ]; then
+  unset LD_PRELOAD
+fi
 
 unset _live_production_env_source

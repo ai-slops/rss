@@ -6,7 +6,7 @@ TOOLS_DIR=$PROJECT_ROOT/.tools
 SYSROOT=$TOOLS_DIR/sysroot
 STAGING=$TOOLS_DIR/sysroot.staging.$$
 REPOSITORIES=$TOOLS_DIR/repositories
-TOOLCHAIN_REVISION=alpine-3.23-rust-1.91.1-gstreamer-1.26.9-ffmpeg-8.0.1-v2
+TOOLCHAIN_REVISION=alpine-3.23-rust-1.91.1-gstreamer-1.26.9-ffmpeg-8.0.1-v3
 
 cleanup() {
   rm -rf "$STAGING"
@@ -58,6 +58,7 @@ if [ "$installed_revision" != "$TOOLCHAIN_REVISION" ]; then
     gst-libav=1.26.9-r0 \
     gst-plugins-rs-rswebrtc=0.14.3-r0 \
     gst-plugins-rs-webrtchttp=0.14.3-r0 \
+    libnice-gstreamer=0.1.22-r0 \
     ffmpeg=8.0.1-r1 \
     ffmpeg-dev=8.0.1-r1
   rm -rf "$SYSROOT"
@@ -105,11 +106,14 @@ PROBE
 pkg-config --atleast-version=1.26.9 gstreamer-1.0 gstreamer-video-1.0 gstreamer-audio-1.0
 cc "$PROBE_DIR/gstreamer.c" -o "$PROBE_DIR/gstreamer-probe" $(pkg-config --cflags --libs gstreamer-1.0)
 "$PROBE_DIR/gstreamer-probe"
+cc "$PROJECT_ROOT/scripts/probes/glib-errors.c" -o "$PROBE_DIR/glib-errors" $(pkg-config --cflags --libs glib-2.0)
+"$PROBE_DIR/glib-errors"
 rustc "$PROBE_DIR/rust.rs" -o "$PROBE_DIR/rust-probe"
 "$PROBE_DIR/rust-probe"
 gst-launch-1.0 -q videotestsrc num-buffers=4 ! compositor ! fakesink
 gst-launch-1.0 -q audiotestsrc num-buffers=4 ! audiomixer ! fakesink
 gst-inspect-1.0 webrtcsink >/dev/null
+gst-inspect-1.0 nicesrc >/dev/null
 gst-inspect-1.0 whipclientsink >/dev/null
 gst-inspect-1.0 whipsink >/dev/null
 gst-inspect-1.0 whepsrc >/dev/null

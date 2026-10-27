@@ -2,6 +2,7 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$PROJECT_ROOT/scripts/smoke-supervisor.sh"
 
 . "$PROJECT_ROOT/scripts/env.sh"
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}

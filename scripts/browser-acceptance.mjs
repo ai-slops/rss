@@ -1,5 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { chromium } from "../web/node_modules/playwright/index.mjs"
+import { ensureSupervised } from './runner-supervision.mjs'
+await ensureSupervised()
 
 const baseUrl = process.env.LIVE_PRODUCTION_URL ?? "http://127.0.0.1:3001"
 const password = process.env.LIVE_PRODUCTION_PASSWORD ?? "test-operator-password"
@@ -16,15 +18,21 @@ const browser = await chromium.launch({
     XDG_DATA_DIRS: `${browserRoot}usr/share`,
   },
   headless: true,
-  args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--autoplay-policy=no-user-gesture-required", "--disable-features=WebRtcHideLocalIpsWithMdns"],
+  args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--autoplay-policy=no-user-gesture-required", "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "--force-webrtc-ip-handling-policy=default", "--disable-features=WebRtcHideLocalIpsWithMdns,LocalNetworkAccessChecksWebRTC"],
 })
-const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+try {
+const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ["camera", "microphone"] })
 const page = await context.newPage()
 const browserErrors = []
+const commandResponses = []
 page.on("console", (message) => {
   if (message.type() === "error") browserErrors.push(message.text())
 })
 page.on("pageerror", (error) => browserErrors.push(error.message))
+page.on("response", async (response) => {
+  if (!response.url().endsWith("/api/v1/commands")) return
+  commandResponses.push({ status: response.status(), body: await response.json() })
+})
 await page.addInitScript(() => {
   const NativePeerConnection = globalThis.RTCPeerConnection
   globalThis.__liveProductionPeerConnections = []
@@ -45,7 +53,7 @@ await page.getByRole("button", { name: "setup" }).click()
 await page.getByRole("button", { name: "Add synthetic input" }).click()
 await page.getByText("Synthetic bars").waitFor({ timeout: 15_000 })
 await page.getByRole("button", { name: "Add video" }).click()
-await page.getByRole("button", { name: "Layers" }).click()
+await page.getByRole("tab", { name: "Layers" }).click()
 await page.getByText("Synthetic bars").last().waitFor({ timeout: 15_000 })
 try {
   await page.getByText(/decoded frames/).first().waitFor({ timeout: 30_000 })
@@ -63,10 +71,29 @@ try {
   await page.screenshot({ path: new URL("connection-failure.png", evidenceDirectory).pathname, fullPage: true })
   throw error
 }
-await page.waitForFunction(() => {
-  const preview = document.querySelector('video[aria-label="preview server-rendered media"]')
-  return preview !== null && preview.getVideoPlaybackQuality().totalVideoFrames > 10
-}, null, { timeout: 30_000 })
+try {
+  await page.waitForFunction(() => {
+    const preview = document.querySelector('video[aria-label="preview server-rendered media"]')
+    return preview !== null && preview.getVideoPlaybackQuality().totalVideoFrames > 10
+  }, null, { timeout: 30_000 })
+} catch (error) {
+  const diagnostics = {
+    browserErrors,
+    commandResponses,
+    notices: await page.locator(".notice").allTextContents(),
+    snapshot: await page.evaluate(async () => (await fetch("/api/v1/snapshot")).json()),
+    media: await page.locator("video").evaluateAll((videos) => videos.map((video) => ({
+      label: video.getAttribute("aria-label"),
+      readyState: video.readyState,
+      width: video.videoWidth,
+      height: video.videoHeight,
+      frames: video.getVideoPlaybackQuality().totalVideoFrames,
+    }))),
+  }
+  await writeFile(new URL("preview-progress-failure.json", evidenceDirectory), `${JSON.stringify(diagnostics, null, 2)}\n`)
+  await page.screenshot({ path: new URL("preview-progress-failure.png", evidenceDirectory).pathname, fullPage: true })
+  throw error
+}
 await page.getByRole("button", { name: "TAKE EXACT REVISION" }).click()
 await page.getByText("MATCHES PROGRAM").waitFor({ timeout: 15_000 })
 try {
@@ -165,4 +192,6 @@ const evidence = {
 }
 await writeFile(new URL("media-stats.json", evidenceDirectory), `${JSON.stringify(evidence, null, 2)}\n`)
 console.log(JSON.stringify(evidence, null, 2))
-await browser.close()
+} finally {
+  await browser.close()
+}

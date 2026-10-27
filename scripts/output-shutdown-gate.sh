@@ -2,6 +2,7 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$PROJECT_ROOT/scripts/smoke-supervisor.sh"
 OUTPUT_DIR=${1:-$PROJECT_ROOT/var/output-shutdown-gate}
 BIND=${OUTPUT_SHUTDOWN_BIND:-127.0.0.1:3098}
 BASE_URL="http://$BIND/api/v1"
@@ -11,10 +12,11 @@ mkdir -p "$OUTPUT_DIR/state"
 CARGO_BUILD_JOBS=3 cargo build -q -p live-production
 
 cleanup() {
-  kill "${server_pid:-}" 2>/dev/null || true
-  wait "${server_pid:-}" 2>/dev/null || true
+  stop_owned_process "${server_pid:-}"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 
 start_server() {
   LIVE_PRODUCTION_BIND=$BIND \

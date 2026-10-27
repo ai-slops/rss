@@ -7,4 +7,4 @@ if [[ ! -x "$ROOT/target/debug/live-production" ]]; then
   exit 1
 fi
 cd "$ROOT"
-exec "$ROOT/target/debug/live-production"
+exec "$ROOT/target/debug/live-production-supervisor" -- "$ROOT/target/debug/live-production"

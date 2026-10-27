@@ -2,6 +2,7 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$PROJECT_ROOT/scripts/smoke-supervisor.sh"
 SRT_PORT=${SRT_PORT:-$(node "$PROJECT_ROOT/scripts/free-port.mjs" udp)}
 RTMP_PORT=${RTMP_PORT:-$(node "$PROJECT_ROOT/scripts/free-port.mjs" tcp)}
 
@@ -13,10 +14,12 @@ mkdir -p "$OUTPUT_DIR"
 srt_receiver=
 rtmp_receiver=
 cleanup() {
-  if [ -n "$srt_receiver" ]; then kill "$srt_receiver" 2>/dev/null || true; fi
-  if [ -n "$rtmp_receiver" ]; then kill "$rtmp_receiver" 2>/dev/null || true; fi
+  stop_owned_process "$srt_receiver"
+  stop_owned_process "$rtmp_receiver"
 }
-trap cleanup EXIT HUP INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 
 timeout 12 gst-launch-1.0 -e -q \
   srtsrc uri="srt://127.0.0.1:$SRT_PORT?mode=listener" wait-for-connection=true \

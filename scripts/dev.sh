@@ -9,6 +9,6 @@ export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
 export LIVE_PRODUCTION_SECURE_COOKIE=${LIVE_PRODUCTION_SECURE_COOKIE:-false}
 npm --prefix "$ROOT/web" ci --no-fund --no-audit
 npm --prefix "$ROOT/web" run build
-cargo build --locked --manifest-path "$ROOT/Cargo.toml" -p live-production
+cargo build --locked --manifest-path "$ROOT/Cargo.toml" -p live-production -p live-production-supervisor
 cd "$ROOT"
-exec "$ROOT/target/debug/live-production"
+exec "$ROOT/scripts/serve.sh"

@@ -2,6 +2,7 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$PROJECT_ROOT/scripts/smoke-supervisor.sh"
 OUTPUT_DIR=${1:-$PROJECT_ROOT/var/output-recording-gate}
 BIND=${OUTPUT_GATE_BIND:-127.0.0.1:3099}
 BASE_URL="http://$BIND/api/v1"
@@ -10,18 +11,20 @@ BASE_URL="http://$BIND/api/v1"
 mkdir -p "$OUTPUT_DIR/state"
 
 cleanup() {
-  kill "${server_pid:-}" 2>/dev/null || true
-  wait "${server_pid:-}" 2>/dev/null || true
+  stop_owned_process "${server_pid:-}"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+
+CARGO_BUILD_JOBS=2 cargo build --locked -q --manifest-path "$PROJECT_ROOT/Cargo.toml" -p live-production
 
 LIVE_PRODUCTION_BIND=$BIND \
 LIVE_PRODUCTION_STATE_DIR="$OUTPUT_DIR/state" \
 LIVE_PRODUCTION_PASSWORD=output-gate-password \
 LIVE_PRODUCTION_SECURE_COOKIE=false \
 LIVE_PRODUCTION_WEB_DIST="$PROJECT_ROOT/web/dist" \
-CARGO_BUILD_JOBS=3 \
-cargo run -q -p live-production >"$OUTPUT_DIR/server.log" 2>&1 &
+"$PROJECT_ROOT/target/debug/live-production" >"$OUTPUT_DIR/server.log" 2>&1 &
 server_pid=$!
 
 attempt=0

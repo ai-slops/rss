@@ -29,6 +29,8 @@ Verify the reported HTTPS URL and sign-in before reporting it usable. Control HT
 
 ## Engineering checks
 
+Native preview/test process ownership and the repeated-run regression are documented in [lifecycle and cleanup](docs/lifecycle.md). All supplied runners supervise their own process trees; do not replace them with background `cargo run`, `nohup` or `setsid` launches.
+
 ```sh
 ./scripts/acceptance.sh --quick  # strict Rust/UI checks and tests
 ./scripts/acceptance.sh          # also actual media, network, browser and extension gates

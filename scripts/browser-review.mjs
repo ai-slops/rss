@@ -2,6 +2,8 @@ import { chromium, errors } from '../web/node_modules/playwright/index.mjs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
+import { ensureSupervised } from './runner-supervision.mjs';
+await ensureSupervised();
 
 const origin = process.env.LIVE_PRODUCTION_URL ?? 'https://live-production--studio-6d4ac2cc57021bab.mj-y.com/';
 const password = (await readFile(new URL('../var/operator-password', import.meta.url), 'utf8')).trimEnd();

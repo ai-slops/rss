@@ -2,6 +2,7 @@
 set -eu
 
 PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+. "$PROJECT_ROOT/scripts/smoke-supervisor.sh"
 OUTPUT_DIR=${1:-$PROJECT_ROOT/var/output-gates}
 
 . "$PROJECT_ROOT/scripts/env.sh"
@@ -9,10 +10,12 @@ mkdir -p "$OUTPUT_DIR"
 
 cleanup() {
   for pid in ${gate_pid:-} ${proxy_one:-} ${proxy_two:-} ${receiver_one:-} ${receiver_two:-}; do
-    kill "$pid" 2>/dev/null || true
+    stop_owned_process "$pid"
   done
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
 
 openssl req -x509 -newkey rsa:2048 -nodes \
   -keyout "$OUTPUT_DIR/key.pem" -out "$OUTPUT_DIR/cert.pem" \

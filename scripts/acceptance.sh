@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+PROJECT_ROOT=$ROOT
+export LIVE_PRODUCTION_SMOKE_TIMEOUT_MS=${LIVE_PRODUCTION_SMOKE_TIMEOUT_MS:-1200000}
+. "$ROOT/scripts/smoke-supervisor.sh"
 source "$ROOT/scripts/env.sh"
 export CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2}
 cd "$ROOT"
@@ -9,6 +12,7 @@ REPORT="$ROOT/var/acceptance/latest.txt"
 exec > >(tee "$REPORT") 2>&1
 printf 'Live Production acceptance — %s\n' "$(date -u +%FT%TZ)"
 printf 'Commit: %s\n' "$(GIT_MASTER=1 git rev-parse HEAD)"
+./scripts/lifecycle-acceptance.sh
 node scripts/size-check.mjs
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings

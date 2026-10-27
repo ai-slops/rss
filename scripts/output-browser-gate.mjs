@@ -1,11 +1,23 @@
 import { mkdir } from "node:fs/promises"
 import { chromium } from "../web/node_modules/playwright/index.mjs"
+import { ensureSupervised } from "./runner-supervision.mjs"
+
+await ensureSupervised()
 
 const baseUrl = process.env.LIVE_PRODUCTION_URL ?? "http://127.0.0.1:3096"
 const password = process.env.LIVE_PRODUCTION_PASSWORD ?? "output-browser-password"
 const evidenceDirectory = process.env.OUTPUT_BROWSER_EVIDENCE ?? "var/output-browser-gate"
 const browserRoot = new URL("../.tools/browser-root/", import.meta.url).pathname
 await mkdir(evidenceDirectory, { recursive: true })
+
+async function openControlRoom(page) {
+  const passwordField = page.getByLabel("Operator password")
+  if (await passwordField.isVisible()) {
+    await passwordField.fill(password)
+    await page.getByRole("button", { name: "Open control room" }).click()
+  }
+  await page.getByText("Untitled production").waitFor({ timeout: 60_000 })
+}
 
 const browser = await chromium.launch({
   executablePath: new URL("./browser-chromium.sh", import.meta.url).pathname,
@@ -25,9 +37,8 @@ try {
   const errors = []
   page.on("pageerror", (error) => errors.push(error.message))
   await page.goto(baseUrl)
-  await page.getByLabel("Operator password").fill(password)
-  await page.getByRole("button", { name: "Open control room" }).click()
-  await page.getByRole("main").waitFor()
+  await openControlRoom(page)
+  await page.getByRole("button", { name: "outputs" }).click()
   await page.evaluate(async () => {
     const snapshot = await (await fetch("/api/v1/snapshot")).json()
     const response = await fetch("/api/v1/commands", {
@@ -41,23 +52,36 @@ try {
         payload: { name: "Synthetic bars", adapter: { kind: "synthetic", pattern: "smpte", frequencyHz: 440 } },
       }),
     })
-    if (!response.ok) throw new Error(`source creation failed: ${response.status}`)
+    const receipt = await response.json()
+    if (!response.ok || receipt.status !== "applied") {
+      throw new Error(`source creation failed: ${response.status} ${JSON.stringify(receipt)}`)
+    }
   })
   await page.reload()
-  await page.getByRole("main").waitFor()
-  await page.getByRole("option", { name: "Synthetic bars" }).waitFor()
+  await openControlRoom(page)
+  await page.getByRole("button", { name: "outputs" }).click()
+  await page.getByRole("option", { name: "Synthetic bars" }).waitFor({ state: "attached" })
 
   await page.getByRole("button", { name: "Add Program recorder" }).click()
-  const programRow = page.locator(".output-row").filter({ hasText: "Program recording" })
+  const programRow = page.locator(".output-row").filter({ hasText: "Program recording" }).last()
   await programRow.waitFor()
   await programRow.getByRole("button", { name: "Start" }).click()
-  await programRow.getByText("RUNNING").waitFor({ timeout: 15_000 })
+  await page.waitForFunction(async () => {
+    const snapshot = await (await fetch("/api/v1/snapshot")).json()
+    return snapshot.outputStatuses.some((status) => status.actual === "running")
+  }, null, { timeout: 15_000 })
   await page.waitForTimeout(2_000)
+  await page.reload()
+  await openControlRoom(page)
+  await page.getByRole("button", { name: "outputs" }).click()
   await programRow.getByRole("button", { name: "Stop" }).click()
-  await programRow.getByText("STOPPED").waitFor({ timeout: 20_000 })
+  await page.waitForFunction(async () => {
+    const snapshot = await (await fetch("/api/v1/snapshot")).json()
+    return snapshot.outputStatuses.some((status) => status.actual === "stopped")
+  }, null, { timeout: 20_000 })
 
   await page.getByRole("button", { name: "Add clean recorder" }).click()
-  await page.locator(".output-row").filter({ hasText: "Clean source recording" }).waitFor()
+  await page.locator(".output-row").filter({ hasText: "Clean source recording" }).last().waitFor()
   await page.evaluate(async () => {
     const response = await fetch("/api/v1/output-destinations", {
       method: "POST",
@@ -68,7 +92,7 @@ try {
   })
   await page.getByPlaceholder("destination-id").fill("browser-local")
   await page.getByRole("button", { name: "Add RTMPS destination" }).click()
-  await page.locator(".output-row").filter({ hasText: "RTMPS destination" }).waitFor()
+  await page.locator(".output-row").filter({ hasText: "RTMPS destination" }).last().waitFor()
 
   await page.screenshot({ path: `${evidenceDirectory}/outputs-1280.png`, fullPage: true })
   const desktopOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)

@@ -2,13 +2,18 @@ use gst::prelude::*;
 use gstreamer as gst;
 use std::sync::{Arc, Mutex};
 
-use crate::{engine_owner::now_nanoseconds, protocol::EngineClockMapping};
+use crate::{
+    engine_owner::now_nanoseconds,
+    protocol::EngineClockMapping,
+    recording_provenance::{ProvenanceCollector, ProvenanceSnapshot},
+};
 
 pub struct RecordingClock {
     pub engine_run_id: Option<String>,
     pub media_origin_ns: u64,
     pub uncertainty_ns: u64,
     corrections: Arc<Mutex<Option<(i128, i128)>>>,
+    provenance: Arc<ProvenanceCollector>,
 }
 
 impl RecordingClock {
@@ -16,6 +21,7 @@ impl RecordingClock {
         pipeline: &gst::Pipeline,
         anchor: &EngineClockMapping,
         engine_run_id: Option<String>,
+        capture_source_provenance: bool,
     ) -> Option<Self> {
         let (_, state, _) = pipeline.state(gst::ClockTime::from_seconds(2));
         if state != gst::State::Playing {
@@ -44,12 +50,23 @@ impl RecordingClock {
                 .value()
                 .saturating_add(after.saturating_sub(before).div_ceil(2)),
             corrections: Arc::new(Mutex::new(None)),
+            provenance: Arc::new(ProvenanceCollector::default()),
         };
-        if let Some(pad) = pipeline
+        if let Some(video) = pipeline
             .by_name("recording_video_input")
             .and_then(|source| source.static_pad("src"))
         {
-            clock.observe(&pad)?;
+            clock.observe_calibration(&video)?;
+            if capture_source_provenance {
+                clock.provenance.observe(&video)?;
+            }
+        }
+        if let Some(audio) = pipeline
+            .by_name("recording_audio_input")
+            .and_then(|source| source.static_pad("src"))
+            && capture_source_provenance
+        {
+            clock.provenance.observe(&audio)?;
         }
         Some(clock)
     }
@@ -63,7 +80,11 @@ impl RecordingClock {
         ))
     }
 
-    fn observe(&self, pad: &gst::Pad) -> Option<()> {
+    pub fn provenance(&self) -> Option<ProvenanceSnapshot> {
+        self.provenance.snapshot()
+    }
+
+    fn observe_calibration(&self, pad: &gst::Pad) -> Option<()> {
         let run = self.engine_run_id.clone()?;
         let origin = i128::from(self.media_origin_ns);
         let corrections = Arc::clone(&self.corrections);
@@ -118,7 +139,7 @@ mod tests {
             wall_time: Nanoseconds::new(before),
             uncertainty: Nanoseconds::new(1_000_000),
         };
-        let clock = RecordingClock::sample(&fixture.pipeline, &anchor, Some("run".into()))
+        let clock = RecordingClock::sample(&fixture.pipeline, &anchor, Some("run".into()), false)
             .ok_or_else(|| anyhow::anyhow!("recording clock"))?;
         let after = now_nanoseconds().value();
         let expected = 5_000_000_000_u64 - elapsed;
@@ -135,7 +156,7 @@ mod tests {
             wall_time: Nanoseconds::new(1),
             uncertainty: Nanoseconds::new(0),
         };
-        assert!(RecordingClock::sample(&pipeline, &anchor, None).is_none());
+        assert!(RecordingClock::sample(&pipeline, &anchor, None, false).is_none());
         Ok(())
     }
 }

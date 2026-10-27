@@ -9,6 +9,9 @@ use thiserror::Error;
 use crate::protocol::EngineRunId;
 
 pub use crate::output_manager::OutputManager;
+pub use crate::recording_provenance::{
+    RecordingProvenanceGap, RecordingProvenanceInterval, RecordingTrackKind,
+};
 
 pub const PROGRAM_VIDEO_CHANNEL: &str = "live-program-video-v1";
 pub const PROGRAM_AUDIO_CHANNEL: &str = "live-program-audio-v1";
@@ -69,6 +72,7 @@ pub struct RecordingDefinition {
     pub(crate) directory: PathBuf,
     pub(crate) segment_duration: Duration,
     pub(crate) engine_run_id: Option<String>,
+    pub(crate) capture_source_provenance: bool,
 }
 
 impl RecordingDefinition {
@@ -88,12 +92,19 @@ impl RecordingDefinition {
             directory: directory.to_path_buf(),
             segment_duration,
             engine_run_id: None,
+            capture_source_provenance: false,
         })
     }
 
     #[must_use]
     pub fn with_engine_run_id(mut self, engine_run_id: &EngineRunId) -> Self {
         self.engine_run_id = Some(engine_run_id.as_str().to_owned());
+        self
+    }
+
+    #[must_use]
+    pub const fn with_source_provenance(mut self) -> Self {
+        self.capture_source_provenance = true;
         self
     }
 }
@@ -168,19 +179,66 @@ pub struct OutputSnapshot {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RecordingSegment {
     pub path: PathBuf,
-    pub start_ns: u64,
-    pub end_ns: u64,
+    #[serde(default, with = "crate::decimal_u64::option")]
+    pub start_ns: Option<u64>,
+    #[serde(default, with = "crate::decimal_u64::option")]
+    pub end_ns: Option<u64>,
     pub bytes: u64,
     pub sha256: String,
     pub decoded: bool,
+    #[serde(default)]
+    pub session_id: String,
+    #[serde(default = "complete_recovery")]
+    pub recovery: RecordingRecovery,
+    #[serde(default)]
+    pub mapping: RecordingMapping,
+    #[serde(default)]
+    pub gaps: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub engine_run_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        with = "crate::decimal_u64::option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub media_start_ns: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        with = "crate::decimal_u64::option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub media_end_ns: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        default,
+        with = "crate::decimal_u64::option",
+        skip_serializing_if = "Option::is_none"
+    )]
     pub media_uncertainty_ns: Option<u64>,
+    #[serde(default)]
+    pub provenance: Vec<RecordingProvenanceInterval>,
+    #[serde(default)]
+    pub provenance_gaps: Vec<RecordingProvenanceGap>,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingRecovery {
+    #[default]
+    Complete,
+    Recovered,
+    Partial,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordingMapping {
+    Mapped,
+    #[default]
+    Unmapped,
+}
+
+const fn complete_recovery() -> RecordingRecovery {
+    RecordingRecovery::Complete
 }
 
 #[derive(Debug, Error)]

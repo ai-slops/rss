@@ -185,6 +185,7 @@ export const commandKindSchema = z.enum([
   "scene.save",
   "scene.cue",
   "scene.take",
+  "scene.item.add",
   "program.cuePrevious",
   "source.create",
   "source.configure",
@@ -192,10 +193,13 @@ export const commandKindSchema = z.enum([
   "source.delete",
   "audio.apply",
   "audio.set",
+  "audio.gain.set",
+  "audio.mute.set",
   "timing.apply",
   "output.create",
   "output.start",
   "output.stop",
+  "output.delete",
   "plugin.command",
 ])
 

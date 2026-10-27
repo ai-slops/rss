@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@phosphor-icons/react": "2.1.10",
+    "gstwebrtc-api": "3.0.0",
     "ky": "1.12.0",
     "react": "19.2.0",
     "react-dom": "19.2.0",
@@ -23,6 +24,7 @@
     "@types/react": "19.2.2",
     "@types/react-dom": "19.2.2",
     "@vitejs/plugin-react": "5.0.4",
+    "playwright": "^1.56.1",
     "react-grab": "0.0.98",
     "react-scan": "0.4.3",
     "typescript": "5.9.3",

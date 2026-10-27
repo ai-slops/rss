@@ -31,6 +31,28 @@ export async function exerciseOperatorControls(page) {
   await page.mouse.up();
   await page.waitForResponse(response => response.url().endsWith('/api/v1/snapshot') && response.status() === 200);
   assert.deepEqual((await item()).rect, beforeEscape, 'Immediate Escape committed a cancelled drag');
+  const otherView = await page.context().newPage();
+  try {
+    await otherView.goto(page.url());
+    await otherView.locator('.workspace').waitFor();
+    await otherView.getByRole('tab', { name: 'Layers', exact: true }).click();
+    await otherView.locator('.layer-row__select').first().click();
+    await otherView.getByLabel('X', { exact: true }).fill('73');
+    await otherView.getByLabel('X', { exact: true }).press('Tab');
+    await expect.poll(async () => (await item()).rect.x).toBe(73);
+    await expect.poll(() => page.getByLabel('X', { exact: true }).inputValue()).toBe('73');
+    await page.locator('.canvas-overlay').focus();
+    await page.keyboard.press('Control+z');
+    await page.waitForResponse(response => response.url().endsWith('/api/v1/snapshot') && response.status() === 200);
+    assert.equal((await item()).rect.x, 73, 'Stale undo overwrote the other view edit');
+  } finally {
+    await otherView.close();
+  }
+  await page.getByRole('button', { name: 'sync', exact: true }).click();
+  await page.getByRole('spinbutton', { name: 'Synthetic bars video correction', exact: true }).fill('20');
+  await page.getByRole('button', { name: 'Validate and apply', exact: true }).click();
+  await expect.poll(async () => (await snapshot()).project.sources[0].tracks.find(track => track.kind === 'video').correctionMs).toBe(20);
+  await page.getByRole('button', { name: 'setup', exact: true }).click();
 
   await page.getByRole('button', { name: 'Audio routes', exact: true }).click();
   const checkbox = page.locator('.production-setup__route input[type=checkbox]').first();
@@ -41,5 +63,5 @@ export async function exerciseOperatorControls(page) {
   await page.getByRole('button', { name: 'Apply routes', exact: true }).click();
   await expect.poll(async () => (await snapshot()).project.audioRoutes.length).toBe(0);
   await page.getByRole('button', { name: 'Inputs', exact: true }).click();
-  return { selectionClickPreservedGeometry: true, savedEditPreservedSelection: true, numericCropAndOpacityApplied: true, immediateEscapeCancelledDrag: true, explicitRouteAndUnrouteApplied: true };
+  return { selectionClickPreservedGeometry: true, savedEditPreservedSelection: true, numericCropAndOpacityApplied: true, immediateEscapeCancelledDrag: true, staleUndoPreservedOtherViewEdit: true, liveTimingControlApplied: true, explicitRouteAndUnrouteApplied: true };
 }

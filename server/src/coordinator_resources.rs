@@ -4,7 +4,7 @@ use crate::{
     error::{AppError, Result},
     model::{
         ActualState, Content, Crop, DesiredState, Fit, Id, Output, OutputAdapter, OutputStatus,
-        Rect, SceneItem, Source, SourceAdapter, Track, TrackKind,
+        Rect, SceneItem, SourceAdapter, TrackKind,
     },
     scene_commands, validation,
 };
@@ -66,45 +66,29 @@ impl Owner {
         Ok(Applied::revision(saved.revision))
     }
 
-    pub(crate) fn create_source(&mut self, name: &str, adapter: &SourceAdapter) -> Result<Applied> {
-        validation::name(name)?;
-        let adapter = self.unique_adapter(adapter);
-        let slot = (0..crate::media_bridge_pipeline::MEDIA_TRACK_SLOTS)
-            .find(|slot| {
-                let video = crate::media_bridge_pipeline::video_track_id(*slot);
-                let audio = crate::media_bridge_pipeline::audio_track_id(*slot);
-                self.project
-                    .sources
-                    .iter()
-                    .flat_map(|source| &source.tracks)
-                    .all(|track| track.id.0 != video && track.id.0 != audio)
-            })
-            .ok_or_else(|| {
-                AppError::Unavailable(
-                    "The native media profile supports eight source pairs.".into(),
-                )
-            })?;
-        self.project.sources.push(Source {
-            id: Id::new(),
-            name: name.into(),
-            enabled: true,
-            adapter,
-            tracks: vec![
-                Track {
-                    id: Id(crate::media_bridge_pipeline::video_track_id(slot)),
-                    kind: TrackKind::Video,
-                    correction_ms: 0,
-                },
-                Track {
-                    id: Id(crate::media_bridge_pipeline::audio_track_id(slot)),
-                    kind: TrackKind::Audio,
-                    correction_ms: 0,
-                },
-            ],
-            record_on_connect: false,
-        });
+    pub(crate) fn create_source(
+        &mut self,
+        command: &Command,
+        name: &str,
+        adapter: &SourceAdapter,
+    ) -> Result<Applied> {
+        let source = self.plugins.create_source(&self.project, name, adapter)?;
+        let credential = self
+            .store
+            .ingest_credential(&source.id.0)
+            .map_err(AppError::Internal)?;
+        let media = self.media.add_source(
+            &command.id,
+            self.media.engine_run_id(),
+            crate::coordinator_sources::source_spec(&source, &credential)?,
+        )?;
+        self.project.sources.push(source);
         self.bump_project()?;
-        Ok(Applied::revision(self.project.revision.clone()))
+        Ok(Applied {
+            revision: Some(self.project.revision.clone()),
+            at_ns: media.at_ns.value().to_string(),
+            plugin_result: None,
+        })
     }
 
     pub(crate) fn delete_source(&mut self, command: &Command) -> Result<Applied> {
@@ -122,11 +106,23 @@ impl Owner {
                 "Remove this source from every scene before deleting it.".into(),
             ));
         }
+        let source_id = live_production_media::protocol::SourceId::new(&source.id.0)
+            .map_err(|error| AppError::Invalid(error.to_string()))?;
+        let media = self
+            .media
+            .remove_source(&command.id, self.media.engine_run_id(), source_id)?;
+        self.store
+            .delete_ingest_credential(&source.id.0)
+            .map_err(AppError::Internal)?;
         self.project
             .sources
             .retain(|source| source.id != command.target_id);
         self.bump_project()?;
-        Ok(Applied::revision(self.project.revision.clone()))
+        Ok(Applied {
+            revision: Some(self.project.revision.clone()),
+            at_ns: media.at_ns.value().to_string(),
+            plugin_result: None,
+        })
     }
 
     pub(crate) fn create_output(&mut self, name: &str, adapter: &OutputAdapter) -> Result<Applied> {
@@ -136,14 +132,21 @@ impl Owner {
             name: name.into(),
             adapter: adapter.clone(),
         };
+        self.plugins
+            .register_output(crate::plugins_factories::OutputFactoryRequest {
+                manager: &self.outputs,
+                output: &output,
+                project: &self.project,
+                store: &self.store,
+                state_directory: &self.state_directory,
+                engine_run_id: self.media.typed_engine_run_id(),
+            })?;
         self.output_statuses.push(OutputStatus {
             output_id: output.id.clone(),
             desired: DesiredState::Stopped,
-            actual: ActualState::Failed,
+            actual: ActualState::Stopped,
             last_media_at_ns: None,
-            error: Some(
-                "The native media engine has no Program-connected adapter for this output.".into(),
-            ),
+            error: None,
             platform_status: "Platform status unknown".into(),
         });
         self.project.outputs.push(output);
@@ -169,27 +172,5 @@ impl Owner {
             .retain(|status| status.output_id != command.target_id);
         self.bump_project()?;
         Ok(Applied::revision(self.project.revision.clone()))
-    }
-
-    fn unique_adapter(&self, adapter: &SourceAdapter) -> SourceAdapter {
-        match adapter {
-            SourceAdapter::Synthetic {
-                pattern,
-                frequency_hz,
-            } => SourceAdapter::Synthetic {
-                pattern: pattern.clone(),
-                frequency_hz: *frequency_hz,
-            },
-            SourceAdapter::Srt { port, buffer_ms } => {
-                let mut candidate = *port;
-                while self.project.sources.iter().any(|source| {
-                    matches!(source.adapter, SourceAdapter::Srt { port, .. } if port == candidate)
-                }) { candidate = candidate.saturating_add(1); }
-                SourceAdapter::Srt {
-                    port: candidate,
-                    buffer_ms: *buffer_ms,
-                }
-            }
-        }
     }
 }

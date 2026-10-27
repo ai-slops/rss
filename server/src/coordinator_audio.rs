@@ -27,6 +27,7 @@ impl Owner {
         Ok(Applied {
             revision: Some(self.project.revision.clone()),
             at_ns: applied.at_ns.value().to_string(),
+            plugin_result: None,
         })
     }
 

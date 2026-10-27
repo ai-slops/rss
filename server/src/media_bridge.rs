@@ -1,8 +1,8 @@
 use live_production_media::{
     engine::MediaEngine,
     protocol::{
-        AudioMixRoute, Command, CommandId, CommandKind, EngineRunId, EventKind, Milliseconds,
-        Nanoseconds, ProgramRevision, ScenePlacement, TrackCorrection, TrackId,
+        AudioMixRoute, Command, CommandId, CommandKind, CompositionPlacement, EngineRunId,
+        EventKind, Milliseconds, Nanoseconds, ProgramRevision, TrackCorrection, TrackId,
     },
 };
 
@@ -26,14 +26,14 @@ pub struct TakeRequest<'a> {
     pub expected_engine_run_id: &'a str,
     pub revision: &'a str,
     pub expected_program_revision: Option<&'a str>,
-    pub placements: Vec<ScenePlacement>,
+    pub placements: Vec<CompositionPlacement>,
 }
 
 pub struct PrepareRequest<'a> {
     pub command_id: &'a str,
     pub expected_engine_run_id: &'a str,
     pub revision: &'a str,
-    pub placements: Vec<ScenePlacement>,
+    pub placements: Vec<CompositionPlacement>,
 }
 
 pub struct TrackTimingRequest<'a> {
@@ -71,10 +71,30 @@ impl MediaBridge {
         self.engine_run_id.as_str()
     }
 
+    #[must_use]
+    pub(crate) fn typed_engine_run_id(&self) -> &EngineRunId {
+        &self.engine_run_id
+    }
+
+    pub(crate) fn execute_kind(
+        &self,
+        command_id_value: &str,
+        expected_engine_run_id: &str,
+        kind: CommandKind,
+    ) -> Result<live_production_media::protocol::EngineEvent> {
+        self.engine
+            .execute(Command {
+                id: command_id(command_id_value)?,
+                expected_engine_run_id: Some(engine_run_id(expected_engine_run_id)?),
+                kind,
+            })
+            .map_err(|error| AppError::Unavailable(error.to_string()))
+    }
+
     pub fn initialize_program(
         &self,
         revision: &str,
-        placements: Vec<ScenePlacement>,
+        placements: Vec<CompositionPlacement>,
     ) -> Result<AppliedMedia> {
         self.take(TakeRequest {
             command_id: &uuid::Uuid::new_v4().to_string(),
@@ -169,7 +189,7 @@ impl MediaBridge {
             .execute(Command {
                 id: command_id(request.command_id)?,
                 expected_engine_run_id: Some(engine_run_id(request.expected_engine_run_id)?),
-                kind: CommandKind::PreparePreview {
+                kind: CommandKind::PrepareComposition {
                     revision: program_revision(request.revision)?,
                     placements: request.placements,
                 },
@@ -212,20 +232,25 @@ fn track_id_value(value: &str) -> Result<TrackId> {
     TrackId::new(value).map_err(|error| AppError::Invalid(error.to_string()))
 }
 
-fn applied_event(event: live_production_media::protocol::EngineEvent) -> Result<AppliedMedia> {
+pub(crate) fn applied_event(
+    event: live_production_media::protocol::EngineEvent,
+) -> Result<AppliedMedia> {
     match event.kind {
         EventKind::Applied {
             discontinuity,
+            media_at,
             program_revision,
         } => Ok(AppliedMedia {
-            at_ns: event.at,
+            at_ns: media_at.unwrap_or(event.at),
             discontinuity,
             program_revision: program_revision.map(|revision| revision.as_str().to_owned()),
         }),
         EventKind::Rejected { reason } => Err(AppError::Conflict(reason)),
         EventKind::Failed { reason } => Err(AppError::Unavailable(reason)),
-        EventKind::Accepted | EventKind::Snapshot { .. } => Err(AppError::Internal(
-            anyhow::anyhow!("unexpected media response"),
-        )),
+        EventKind::Accepted | EventKind::Snapshot { .. } | EventKind::RuntimeSnapshot { .. } => {
+            Err(AppError::Internal(anyhow::anyhow!(
+                "unexpected media response"
+            )))
+        }
     }
 }

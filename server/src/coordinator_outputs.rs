@@ -1,4 +1,4 @@
-use live_production_media::output::OutputState;
+use live_production_media::output::{OutputState, RecordingMapping, RecordingRecovery};
 
 use crate::{
     command::Command,
@@ -99,14 +99,24 @@ impl Owner {
         self.recordings
             .retain(|recording| recording.output_id != *output_id);
         self.recordings.extend(segments.into_iter().map(|segment| {
+            let file_name = segment
+                .path
+                .file_name()
+                .and_then(std::ffi::OsStr::to_str)
+                .unwrap_or("unknown-fragment");
             Recording {
-                id: Id(format!("recording-{}", segment.sha256.clone())),
+                id: Id(format!("recording-{}-{file_name}", segment.session_id)),
                 output_id: output_id.clone(),
                 name: output.name.clone(),
                 path: segment.path.to_string_lossy().into_owned(),
                 tap_point: tap_point(&output.adapter).into(),
-                start_ns: segment.start_ns.to_string(),
-                end_ns: Some(segment.end_ns.to_string()),
+                session_id: segment.session_id,
+                recovery_status: recovery_status(segment.recovery).into(),
+                mapping_status: mapping_status(segment.mapping).into(),
+                start_ns: segment
+                    .start_ns
+                    .map_or_else(|| "unknown".to_owned(), |value| value.to_string()),
+                end_ns: segment.end_ns.map(|value| value.to_string()),
                 engine_run_id: segment.engine_run_id,
                 media_start_ns: segment.media_start_ns.map(|value| value.to_string()),
                 media_end_ns: segment.media_end_ns.map(|value| value.to_string()),
@@ -115,11 +125,13 @@ impl Owner {
                 validation: if segment.decoded {
                     "decoded"
                 } else {
-                    "decode_failed"
+                    "partial"
                 }
                 .into(),
                 sha256: Some(segment.sha256),
-                gaps: Vec::new(),
+                gaps: segment.gaps,
+                provenance: segment.provenance,
+                provenance_gaps: segment.provenance_gaps,
             }
         }));
         Ok(())
@@ -131,6 +143,21 @@ impl Owner {
             .iter()
             .find(|output| output.id == *id)
             .ok_or_else(|| AppError::Invalid("Output no longer exists.".into()))
+    }
+}
+
+const fn recovery_status(recovery: RecordingRecovery) -> &'static str {
+    match recovery {
+        RecordingRecovery::Complete => "complete",
+        RecordingRecovery::Recovered => "recovered",
+        RecordingRecovery::Partial => "partial",
+    }
+}
+
+const fn mapping_status(mapping: RecordingMapping) -> &'static str {
+    match mapping {
+        RecordingMapping::Mapped => "mapped",
+        RecordingMapping::Unmapped => "unmapped",
     }
 }
 

@@ -65,6 +65,12 @@ pub struct Recording {
     pub name: String,
     pub path: String,
     pub tap_point: String,
+    #[serde(default)]
+    pub session_id: String,
+    #[serde(default = "complete_recovery_status")]
+    pub recovery_status: String,
+    #[serde(default = "unmapped_status")]
+    pub mapping_status: String,
     pub start_ns: String,
     pub end_ns: Option<String>,
     #[serde(default)]
@@ -79,4 +85,16 @@ pub struct Recording {
     pub validation: String,
     pub sha256: Option<String>,
     pub gaps: Vec<String>,
+    #[serde(default)]
+    pub provenance: Vec<live_production_media::output::RecordingProvenanceInterval>,
+    #[serde(default)]
+    pub provenance_gaps: Vec<live_production_media::output::RecordingProvenanceGap>,
+}
+
+fn complete_recovery_status() -> String {
+    "complete".to_owned()
+}
+
+fn unmapped_status() -> String {
+    "unmapped".to_owned()
 }

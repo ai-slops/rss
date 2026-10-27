@@ -55,6 +55,7 @@ pub struct TrackSnapshot {
     pub format: &'static str,
     pub buffer_ms: u32,
     pub late_frames: u64,
+    pub drift: Option<live_production_media::protocol::TrackDriftReport>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -170,6 +171,7 @@ pub fn source_snapshot(source: &Source, scenes: &[Scene]) -> SourceSnapshot {
                 format: "Media adapter unavailable",
                 buffer_ms: 0,
                 late_frames: 0,
+                drift: None,
             })
             .collect(),
         record_on_connect: source.record_on_connect,

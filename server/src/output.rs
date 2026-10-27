@@ -65,7 +65,8 @@ pub(crate) fn register(
                     Duration::from_secs(u64::from(*segment_seconds)),
                 )
                 .map_err(invalid)?
-                .with_engine_run_id(engine_run_id),
+                .with_engine_run_id(engine_run_id)
+                .with_source_provenance(),
             )
         }
         OutputAdapter::Rtmps { destination_id } => {

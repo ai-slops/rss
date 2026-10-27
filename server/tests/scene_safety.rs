@@ -1,3 +1,4 @@
+use anyhow::Context;
 use live_production::{
     command::{Action, Command, ScenePayload},
     model::*,
@@ -28,7 +29,7 @@ fn camera_item(track_id: Id) -> SceneItem {
     }
 }
 
-fn project_with_camera() -> Project {
+fn project_with_camera() -> anyhow::Result<Project> {
     let mut project = Project::empty();
     let track_id = Id::new();
     project.sources.push(Source {
@@ -49,10 +50,10 @@ fn project_with_camera() -> Project {
     project
         .scenes
         .first_mut()
-        .expect("standby")
+        .context("standby scene missing from fixture")?
         .items
         .push(camera_item(track_id));
-    project
+    Ok(project)
 }
 
 fn save_command(scene: Scene, revision: &str) -> Command {
@@ -67,7 +68,7 @@ fn save_command(scene: Scene, revision: &str) -> Command {
 
 #[test]
 fn duplicate_preserves_track_identity_without_duplicate_capture_or_audio() {
-    let mut project = project_with_camera();
+    let mut project = project_with_camera().expect("camera fixture");
     let original = project.scenes.first().expect("scene").clone();
     let copied = scene_commands::duplicate(&mut project, &original.id).expect("duplicate");
     let original_item = original.items.first().expect("original placement");
@@ -83,7 +84,7 @@ fn duplicate_preserves_track_identity_without_duplicate_capture_or_audio() {
 
 #[test]
 fn a_stale_scene_save_preserves_newer_draft() {
-    let mut project = project_with_camera();
+    let mut project = project_with_camera().expect("camera fixture");
     let original = project.scenes.first().expect("scene").clone();
     let mut first = original.clone();
     first.name = "Operator A saved".into();
@@ -107,7 +108,7 @@ fn a_stale_scene_save_preserves_newer_draft() {
 
 #[test]
 fn locked_placement_rejects_removal_but_allows_explicit_visibility() {
-    let mut project = project_with_camera();
+    let mut project = project_with_camera().expect("camera fixture");
     project
         .scenes
         .first_mut()
@@ -137,7 +138,7 @@ fn locked_placement_rejects_removal_but_allows_explicit_visibility() {
 
 #[test]
 fn locked_placement_rejects_crop_changes() {
-    let mut project = project_with_camera();
+    let mut project = project_with_camera().expect("camera fixture");
     let current = project.scenes.first_mut().expect("scene");
     current.items.first_mut().expect("placement").locked = true;
     let mut changed = current.clone();

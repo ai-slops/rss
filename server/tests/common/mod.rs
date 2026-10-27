@@ -1,3 +1,5 @@
+#![cfg(test)]
+
 use axum::{
     body::Body,
     http::{Request, StatusCode},
@@ -15,6 +17,12 @@ use tower::ServiceExt;
 pub struct Harness {
     pub app: axum::Router,
     pub _directory: Arc<TempDir>,
+}
+
+impl Default for Harness {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Harness {

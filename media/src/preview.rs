@@ -15,7 +15,13 @@ pub struct PreviewOutputs {
     preview_port: u16,
     program_port: u16,
     pipelines: Vec<gst::Pipeline>,
-    source_pipelines: Mutex<HashMap<TrackId, (u16, gst::Pipeline)>>,
+    source_pipelines: Mutex<HashMap<TrackId, SourceMonitor>>,
+}
+
+struct SourceMonitor {
+    port: u16,
+    pipeline: gst::Pipeline,
+    clients: usize,
 }
 
 impl PreviewOutputs {
@@ -63,17 +69,45 @@ impl PreviewOutputs {
             .source_pipelines
             .lock()
             .map_err(|_| PreviewError::Gstreamer("source monitor state is unavailable".into()))?;
-        if let Some((port, _)) = sources.get(&track_id) {
-            return Ok(*port);
+        if let Some(monitor) = sources.get_mut(&track_id) {
+            monitor.clients += 1;
+            return Ok(monitor.port);
         }
         if sources.len() >= SOURCE_AUDIO_SLOTS {
             return Err(PreviewError::SourceBudgetFull);
         }
         let port = allocate_local_port()?;
         let pipeline = start_pipeline(&audio_pipeline(&self.engine_run_id, &track_id, port))?;
-        sources.insert(track_id, (port, pipeline));
+        sources.insert(
+            track_id,
+            SourceMonitor {
+                port,
+                pipeline,
+                clients: 1,
+            },
+        );
         drop(sources);
         Ok(port)
+    }
+
+    pub fn release_source_audio(&self, track: &str) {
+        let Ok(track) = TrackId::new(track) else {
+            return;
+        };
+        let Ok(mut sources) = self.source_pipelines.lock() else {
+            return;
+        };
+        let remove = if let Some(monitor) = sources.get_mut(&track) {
+            monitor.clients = monitor.clients.saturating_sub(1);
+            monitor.clients == 0
+        } else {
+            false
+        };
+        let retired = if remove { sources.remove(&track) } else { None };
+        drop(sources);
+        if let Some(monitor) = retired {
+            let _ = monitor.pipeline.set_state(gst::State::Null);
+        }
     }
 }
 
@@ -83,8 +117,8 @@ impl Drop for PreviewOutputs {
             let _ = pipeline.set_state(gst::State::Null);
         }
         if let Ok(sources) = self.source_pipelines.lock() {
-            for (_, pipeline) in sources.values() {
-                let _ = pipeline.set_state(gst::State::Null);
+            for monitor in sources.values() {
+                let _ = monitor.pipeline.set_state(gst::State::Null);
             }
         }
     }
@@ -113,6 +147,17 @@ fn start_pipeline(description: &str) -> Result<gst::Pipeline, PreviewError> {
     let pipeline = element
         .downcast::<gst::Pipeline>()
         .map_err(|_| PreviewError::Gstreamer("preview description is not a pipeline".into()))?;
+    for element in pipeline.children() {
+        if element
+            .factory()
+            .is_some_and(|factory| factory.name() == "webrtcsink")
+        {
+            element.set_property(
+                "stun-server",
+                std::env::var("LIVE_PRODUCTION_STUN_SERVER").ok(),
+            );
+        }
+    }
     pipeline
         .set_state(gst::State::Playing)
         .map_err(|error| PreviewError::Gstreamer(error.to_string()))?;
@@ -123,9 +168,9 @@ fn video_pipeline(engine_run_id: &EngineRunId, name: &str, port: u16) -> String 
     let channel = TapChannels::preview(engine_run_id);
     format!(
         "intervideosrc channel={channel} timeout=500000000 ! queue max-size-buffers=1 leaky=downstream ! \
-         videoconvert ! video/x-raw,width=960,height=540,framerate=30/1 ! \
+         videoconvert ! video/x-raw,format=I420,width=960,height=540,framerate=30/1 ! \
          webrtcsink name={name}_webrtc run-signalling-server=true signalling-server-host=127.0.0.1 \
-         signalling-server-port={port} stun-server=\"\" congestion-control=disabled do-fec=false \
+         signalling-server-port={port} congestion-control=disabled do-fec=false \
          video-caps=video/x-vp8 meta=meta,name={name}"
     )
 }
@@ -134,10 +179,10 @@ fn program_pipeline(engine_run_id: &EngineRunId, port: u16) -> String {
     let channels = TapChannels::program(engine_run_id);
     format!(
         "webrtcsink name=program_webrtc run-signalling-server=true signalling-server-host=127.0.0.1 \
-         signalling-server-port={port} stun-server=\"\" video-caps=video/x-vp8 audio-caps=audio/x-opus \
+         signalling-server-port={port} video-caps=video/x-vp8 audio-caps=audio/x-opus \
          congestion-control=disabled do-fec=false meta=meta,name=program \
          intervideosrc channel={} timeout=500000000 ! queue max-size-buffers=1 leaky=downstream ! \
-         videoconvert ! video/x-raw,width=960,height=540,framerate=30/1 ! program_webrtc.video_0 \
+         videoconvert ! video/x-raw,format=I420,width=960,height=540,framerate=30/1 ! program_webrtc.video_0 \
          interaudiosrc channel={} ! queue max-size-time=200000000 leaky=downstream ! \
          audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! program_webrtc.audio_0",
         channels.video, channels.audio
@@ -145,13 +190,13 @@ fn program_pipeline(engine_run_id: &EngineRunId, port: u16) -> String {
 }
 
 fn audio_pipeline(engine_run_id: &EngineRunId, track_id: &TrackId, port: u16) -> String {
-    let channel = TapChannels::source(engine_run_id, track_id, track_id).audio;
+    let channel = TapChannels::source_audio(engine_run_id, track_id);
     let name = format!("source-{}", track_id.as_str());
     format!(
         "interaudiosrc channel={channel} ! queue max-size-time=200000000 leaky=downstream ! \
          audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! \
          webrtcsink name={name}_webrtc run-signalling-server=true signalling-server-host=127.0.0.1 \
-         signalling-server-port={port} stun-server=\"\" congestion-control=disabled do-fec=false \
+         signalling-server-port={port} congestion-control=disabled do-fec=false \
          audio-caps=audio/x-opus meta=meta,name={name}"
     )
 }
@@ -179,9 +224,6 @@ mod tests {
         assert!(program.contains("channel=live-engine-run-a-program-video-v1"));
         assert!(program.contains("channel=live-engine-run-a-program-audio-v1"));
         assert!(source.contains("channel=live-engine-run-a-source-audio-v1-camera-audio"));
-        assert!(preview.contains("stun-server=\"\""));
-        assert!(program.contains("stun-server=\"\""));
-        assert!(source.contains("stun-server=\"\""));
         Ok(())
     }
 

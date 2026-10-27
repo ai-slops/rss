@@ -130,9 +130,57 @@ pub struct SourceSnapshot {
     pub audio_input_peak_milli_db: Option<i32>,
     pub audio_post_peak_milli_db: Option<i32>,
     pub audio_clipping: Option<bool>,
+    pub video_drift: Option<TrackDriftReport>,
+    pub audio_drift: Option<TrackDriftReport>,
     pub video_buffered_ns: Nanoseconds,
     pub audio_buffered_ns: Nanoseconds,
     pub gaps: Vec<SourceGap>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TrackDriftReport {
+    pub samples: FrameCount,
+    pub timestamp_rate_ppm: i64,
+    pub rate_standard_error_ppm: u64,
+    pub arrival_skew_ns: SignedNanoseconds,
+    pub observation_window_nanoseconds: Nanoseconds,
+    pub timestamp_residual_rms: Nanoseconds,
+    pub discontinuities: FrameCount,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SignedNanoseconds(i64);
+
+impl SignedNanoseconds {
+    #[must_use]
+    pub const fn new(value: i64) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn value(self) -> i64 {
+        self.0
+    }
+}
+
+impl Serialize for SignedNanoseconds {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for SignedNanoseconds {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        value.parse().map(Self).map_err(serde::de::Error::custom)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

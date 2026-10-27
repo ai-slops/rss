@@ -1,4 +1,6 @@
-use std::time::{Duration, Instant};
+mod output_support;
+
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use gst::prelude::*;
 use gstreamer as gst;
@@ -6,6 +8,8 @@ use live_production_media::output::{
     DestinationUrl, MediaTap, OutputDefinition, OutputId, OutputManager, OutputState,
     RecordingDefinition,
 };
+use live_production_media::protocol::{EngineClockMapping, EngineRunId, Nanoseconds};
+use output_support::{producer, wait_for_media, wait_for_state};
 
 #[test]
 fn recording_owner_finalizes_decodable_bounded_segments() -> anyhow::Result<()> {
@@ -14,18 +18,49 @@ fn recording_owner_finalizes_decodable_bounded_segments() -> anyhow::Result<()> 
     let directory = tempfile::tempdir()?;
     let channels = MediaTap::new("recording-test-video", "recording-test-audio")?;
     let producer = producer(&channels)?;
+    let reference = gst::Caps::builder("timestamp/x-live-production-engine")
+        .field("engine-run-id", "recording-test-run")
+        .build();
+    producer
+        .by_name("fixture_video_tap")
+        .and_then(|tap| tap.static_pad("sink"))
+        .ok_or_else(|| anyhow::anyhow!("fixture video tap"))?
+        .add_probe(gst::PadProbeType::BUFFER, move |_, info| {
+            if let Some(buffer) = info.buffer_mut()
+                && let Some(pts) = buffer.pts()
+            {
+                let time = gst::ClockTime::from_nseconds(5_000_000_000 + pts.nseconds());
+                gst::ReferenceTimestampMeta::add(buffer.make_mut(), &reference, time, None);
+            }
+            gst::PadProbeReturn::Ok
+        })
+        .ok_or_else(|| anyhow::anyhow!("fixture timestamp observation"))?;
     producer.set_state(gst::State::Playing)?;
     let manager = OutputManager::new();
     let output_id = OutputId::new("program-recording")?;
-    manager.register(OutputDefinition::Recording(RecordingDefinition::new(
-        output_id.clone(),
-        channels,
-        directory.path(),
-        Duration::from_secs(1),
-    )?))?;
+    manager.register(OutputDefinition::Recording(
+        RecordingDefinition::new(
+            output_id.clone(),
+            channels,
+            directory.path(),
+            Duration::from_secs(1),
+        )?
+        .with_engine_run_id(&EngineRunId::new("recording-test-run")?),
+    ))?;
 
     // When
-    manager.start(&output_id)?;
+    let wall_time = SystemTime::now()
+        .duration_since(UNIX_EPOCH)?
+        .as_nanos()
+        .try_into()?;
+    manager.start_with_clock(
+        &output_id,
+        Some(EngineClockMapping {
+            media_time: Nanoseconds::new(5_000_000_000),
+            wall_time: Nanoseconds::new(wall_time),
+            uncertainty: Nanoseconds::new(1_000_000),
+        }),
+    )?;
     wait_for_state(&manager, &output_id, OutputState::Running)?;
     wait_for_media(&manager, &output_id)?;
     std::thread::sleep(Duration::from_secs(3));
@@ -41,7 +76,59 @@ fn recording_owner_finalizes_decodable_bounded_segments() -> anyhow::Result<()> 
     assert!(recordings.iter().all(|segment| segment.bytes > 0));
     assert!(recordings.iter().all(|segment| segment.decoded));
     assert!(recordings.iter().all(|segment| segment.sha256.len() == 64));
+    assert!(
+        recordings.iter().all(|segment| {
+            segment.engine_run_id.as_deref() == Some("recording-test-run")
+                && segment.media_start_ns.is_some()
+                && segment.media_end_ns > segment.media_start_ns
+                && segment.media_uncertainty_ns.is_some()
+        }),
+        "{recordings:#?}"
+    );
+    let distinct_starts = recordings
+        .iter()
+        .filter_map(|segment| segment.media_start_ns)
+        .collect::<std::collections::BTreeSet<_>>();
+    assert_eq!(distinct_starts.len(), recordings.len());
     producer.set_state(gst::State::Null)?;
+    Ok(())
+}
+
+#[test]
+fn legacy_recording_catalog_loads_with_unknown_media_mapping() -> anyhow::Result<()> {
+    // Given
+    let directory = tempfile::tempdir()?;
+    let session = directory.path().join("legacy-session");
+    std::fs::create_dir(&session)?;
+    std::fs::write(
+        session.join("catalog.json"),
+        serde_json::to_vec(&serde_json::json!([{
+            "path": session.join("segment-00000.mkv"),
+            "start_ns": 100,
+            "end_ns": 200,
+            "bytes": 10,
+            "sha256": "legacy",
+            "decoded": true
+        }]))?,
+    )?;
+    let manager = OutputManager::new();
+    let output_id = OutputId::new("legacy-recording")?;
+    manager.register(OutputDefinition::Recording(RecordingDefinition::new(
+        output_id.clone(),
+        MediaTap::new("legacy-video", "legacy-audio")?,
+        directory.path(),
+        Duration::from_secs(1),
+    )?))?;
+
+    // When
+    let recordings = manager.recordings(&output_id)?;
+
+    // Then
+    assert_eq!(recordings.len(), 1);
+    assert!(recordings[0].engine_run_id.is_none());
+    assert!(recordings[0].media_start_ns.is_none());
+    assert!(recordings[0].media_end_ns.is_none());
+    assert!(recordings[0].media_uncertainty_ns.is_none());
     Ok(())
 }
 
@@ -135,161 +222,6 @@ fn storage_failure_does_not_stop_an_independent_recorder() -> anyhow::Result<()>
     std::fs::set_permissions(&blocked, std::fs::Permissions::from_mode(0o700))?;
     producer.set_state(gst::State::Null)?;
     Ok(())
-}
-
-#[test]
-fn duplicate_start_keeps_single_recording_owner() -> anyhow::Result<()> {
-    // Given
-    gst::init()?;
-    let directory = tempfile::tempdir()?;
-    let channels = MediaTap::new("duplicate-test-video", "duplicate-test-audio")?;
-    let producer = producer(&channels)?;
-    producer.set_state(gst::State::Playing)?;
-    let manager = OutputManager::new();
-    let output_id = OutputId::new("duplicate-recorder")?;
-    manager.register(OutputDefinition::Recording(RecordingDefinition::new(
-        output_id.clone(),
-        channels,
-        directory.path(),
-        Duration::from_secs(1),
-    )?))?;
-    manager.start(&output_id)?;
-    wait_for_media(&manager, &output_id)?;
-
-    // When
-    manager.start(&output_id)?;
-    std::thread::sleep(Duration::from_secs(2));
-    manager.stop(&output_id)?;
-
-    // Then
-    assert_eq!(std::fs::read_dir(directory.path())?.count(), 1);
-    assert!(!manager.recordings(&output_id)?.is_empty());
-    producer.set_state(gst::State::Null)?;
-    Ok(())
-}
-
-#[test]
-fn manager_drop_drains_and_joins_active_recorder() -> anyhow::Result<()> {
-    // Given
-    gst::init()?;
-    let directory = tempfile::tempdir()?;
-    let channels = MediaTap::new("shutdown-test-video", "shutdown-test-audio")?;
-    let producer = producer(&channels)?;
-    producer.set_state(gst::State::Playing)?;
-    let output_id = OutputId::new("shutdown-recorder")?;
-    {
-        let manager = OutputManager::new();
-        manager.register(OutputDefinition::Recording(RecordingDefinition::new(
-            output_id.clone(),
-            channels,
-            directory.path(),
-            Duration::from_secs(1),
-        )?))?;
-        manager.start(&output_id)?;
-        wait_for_media(&manager, &output_id)?;
-        std::thread::sleep(Duration::from_secs(2));
-
-        // When
-        drop(manager);
-    }
-
-    // Then
-    let session = std::fs::read_dir(directory.path())?
-        .next()
-        .transpose()?
-        .ok_or_else(|| anyhow::anyhow!("missing recording session"))?
-        .path();
-    let catalog: serde_json::Value =
-        serde_json::from_slice(&std::fs::read(session.join("catalog.json"))?)?;
-    assert!(
-        catalog
-            .as_array()
-            .is_some_and(|segments| !segments.is_empty())
-    );
-    producer.set_state(gst::State::Null)?;
-    Ok(())
-}
-
-#[cfg(unix)]
-#[test]
-fn recorder_failure_preserves_closed_and_partial_catalog_entries() -> anyhow::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
-
-    // Given
-    gst::init()?;
-    let directory = tempfile::tempdir()?;
-    let channels = MediaTap::new("partial-test-video", "partial-test-audio")?;
-    let producer = producer(&channels)?;
-    producer.set_state(gst::State::Playing)?;
-    let manager = OutputManager::new();
-    let output_id = OutputId::new("partial-recorder")?;
-    manager.register(OutputDefinition::Recording(RecordingDefinition::new(
-        output_id.clone(),
-        channels,
-        directory.path(),
-        Duration::from_secs(1),
-    )?))?;
-    manager.start(&output_id)?;
-    wait_for_media(&manager, &output_id)?;
-    std::thread::sleep(Duration::from_secs(2));
-    let session = std::fs::read_dir(directory.path())?
-        .next()
-        .transpose()?
-        .ok_or_else(|| anyhow::anyhow!("missing recording session"))?
-        .path();
-
-    // When
-    std::fs::set_permissions(&session, std::fs::Permissions::from_mode(0o500))?;
-    wait_for_state(&manager, &output_id, OutputState::Failed)?;
-
-    // Then
-    let recordings = manager.recordings(&output_id)?;
-    assert!(!recordings.is_empty());
-    assert!(recordings.iter().all(|segment| segment.bytes > 0));
-    std::fs::set_permissions(&session, std::fs::Permissions::from_mode(0o700))?;
-    producer.set_state(gst::State::Null)?;
-    Ok(())
-}
-
-fn producer(tap: &MediaTap) -> anyhow::Result<gst::Pipeline> {
-    let description = format!(
-        "videotestsrc is-live=true pattern=ball ! video/x-raw,width=320,height=180,framerate=30/1 ! intervideosink channel={} sync=false \
-         audiotestsrc is-live=true wave=ticks ! audio/x-raw,rate=48000,channels=2 ! interaudiosink channel={} sync=false",
-        tap.video_channel(),
-        tap.audio_channel()
-    );
-    gst::parse::launch(&description)?
-        .downcast::<gst::Pipeline>()
-        .map_err(|_| anyhow::anyhow!("producer description did not create a pipeline"))
-}
-
-fn wait_for_state(
-    manager: &OutputManager,
-    id: &OutputId,
-    state: OutputState,
-) -> anyhow::Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while Instant::now() < deadline {
-        if manager.snapshot(id)?.actual == state {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    anyhow::bail!(
-        "output did not reach {state:?}: {:?}",
-        manager.snapshot(id)?
-    )
-}
-
-fn wait_for_media(manager: &OutputManager, id: &OutputId) -> anyhow::Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while Instant::now() < deadline {
-        if manager.snapshot(id)?.last_media_at_ns.is_some() {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    anyhow::bail!("output produced no media")
 }
 
 fn wait_for_retry(manager: &OutputManager, id: &OutputId) -> anyhow::Result<()> {

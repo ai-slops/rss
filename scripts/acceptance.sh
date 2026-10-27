@@ -27,7 +27,7 @@ if [[ ${1:-} == --quick ]]; then
 fi
 ./scripts/media-stage-a.sh
 ./scripts/media-network-gates.sh
-for gate in output-acceptance browser-acceptance editor-acceptance; do
+for gate in output-acceptance output-crash-recovery-gate browser-acceptance editor-acceptance; do
   if [[ ! -x "scripts/$gate.sh" ]]; then
     printf 'REQUIRED GATE UNAVAILABLE: scripts/%s.sh\n' "$gate" >&2
     exit 1

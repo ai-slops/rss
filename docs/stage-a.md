@@ -25,12 +25,12 @@ between `engine_owner.rs`, `engine_commands.rs`, and `engine_layout.rs`.
 
 ## Reproduction
 
-All compilation is limited to three jobs.
+Project scripts default to two compilation jobs.
 
 ```sh
 ./scripts/bootstrap.sh
 . ./scripts/env.sh
-CARGO_BUILD_JOBS=3 cargo test -p live-production-media
+CARGO_BUILD_JOBS=2 cargo test -p live-production-media
 ./scripts/media-stage-a.sh
 ./scripts/media-network-gates.sh
 ```
@@ -98,35 +98,40 @@ Observed results:
 - Signed per-track correction plus explicit common holdback on the measured synthetic path.
 - Independently finalized clean and Program recorders with bounded two-second segments.
 - SRT/MPEG-TS H.264/AAC input description and loopback transport/decode gate.
-- RTMP/RTMPS H.264/AAC FLV output description; local RTMP receiver gate.
+- Independently supervised H.264/AAC FLV publishers fed by native Program taps; controlled local
+  RTMPS and two-destination gates are recorded in `docs/output-evidence.md`.
 - Browser-preview description through `webrtcsink`, with embedded signaling and web servers.
 - Typed, deduplicated owner commands with engine-run checking and ordered event metadata.
 - Exact-revision Preview preparation and frame-boundary Program Take with stale-revision
   rejection.
 - Live audio route, gain, and mute updates addressed by stable track ID.
 
+## Latest integrated validation
+
+The full acceptance run started on 2026-10-27 at 14:34:21 UTC against code checkpoint `ef2e70d` passed all workspace tests, all-target strict Clippy, browser media, output and extension gates. Its fresh Stage A artifacts are `var/media-stage-a.7r3dHH/`; calibration again measured exactly `250.000 ms`. The result details and remaining partial gates are tracked in `docs/acceptance.md`; historical measurements above are not target-machine throughput claims.
+
+Dynamic compositors now keep an engine-owned hidden live input so adding the first scene layer does not reset an otherwise padless compositor's output timeline. Native video taps preserve engine-run-scoped reference timestamps. A decoded multi-fragment recording test reconciles actual visual transitions with authoritative Program Take PTS. Timing transactions also have a paused/resume regression proving failed commands cannot apply later.
+
 ## Explicit gaps
 
-- Preview/Program layout, per-track timing, live mixer values, and named output valves are
-  dynamically controlled, but source add/remove/reconnect still requires rebuilding or
-  extending the configured graph. There is not yet a coordinator-facing raw-frame route;
-  browser and recording media remain native GStreamer branches.
+- Preview/Program layout, source add/remove/reconnect, per-track timing, live mixer values, and
+  named output valves are dynamically controlled through run-scoped native taps. Browser and
+  recording media remain isolated native GStreamer consumer branches.
 - No external OBS instance was supplied. The SRT fixture proves the expected encoded network
-  profile and decode path, not OBS-specific publishing controls, independent OBS tracks, or
-  source authentication.
-- A real RTMPS endpoint was not available. The installed `rtmpsink` accepts an RTMPS
-  description, while the controlled receiver gate used plain RTMP. Platform TLS, credentials,
-  auto-start semantics, reconnect behavior, and public broadcast state are untested.
-- `webrtcsink` successfully started its embedded signaling server on port `8443` and web server
-  on port `8080`. The package did not include `gstwebrtc-api/dist`, so HTTP returned an empty
-  page, and this environment has no Chromium/Chrome binary for Playwright. No browser peer,
-  ICE exchange, decoded frame, remote route, or display-correlation claim is made.
-- The current signed timing implementation is measured for sources exposing a writable
-  `timestamp-offset`, including the synthetic fixture. Arbitrary decoded network tracks still
-  need an application-managed retained buffer and timestamp-normalizing transform before
-  negative correction can be claimed for live ingest.
-- Recorder and preview branch isolation is measured. A failed RTMP sink is not yet detached
-  and supervised inside the Program graph, so independent destination retry/recovery remains a
-  Stage C gap.
-- Hardware encoding, sustained 1080p60/4K capacity, long-run clock drift, disk-full behavior,
-  crash recovery, and editor import compatibility were not tested.
+  profile and decode path, not OBS-specific publishing controls or independent OBS tracks.
+  Controlled wrong-secret rejection and stable-ID reconnect are tested separately.
+- Controlled local RTMPS receivers now validate TLS transport, reconnect/manual-stop behavior,
+  and two-destination isolation. A real platform account, its auto-start semantics, and a private
+  platform broadcast remain untested.
+- Project-local Chromium now decodes both server-rendered monitors and selected-source audio
+  through authenticated same-origin signaling with normal media policies. Remote-laptop/shared-
+  ingress ICE remains unverified, and reliable browser frame/revision correlation is not claimed.
+- Signed timing now uses timestamp normalization, bounded decoded history and scheduling probes
+  for the controlled synthetic/SRT profile. The authenticated SRT test observes retained decoded
+  video/audio and rejected infeasible timing. Sustained independent-clock drift, arbitrary sender
+  profiles and long-running transition/memory stress remain unverified.
+- Recorder, preview, and publisher isolation are measured. Publishers have independent retry and
+  manual-stop lifecycles; storage failure and graceful `SIGTERM` recording recovery are covered in
+  `docs/output-evidence.md`.
+- Hardware encoding, sustained 1080p60/4K capacity, long-run clock drift, abrupt `SIGKILL` recovery,
+  and intended editor import compatibility were not tested.

@@ -13,6 +13,46 @@ pub struct TrackProgress {
     last_activity_ns: AtomicU64,
 }
 
+#[derive(Clone, Copy)]
+pub struct ProgressNames<'a> {
+    pub video_playout: &'a str,
+    pub audio_playout: &'a str,
+    pub video_ingest: &'a str,
+    pub audio_ingest: &'a str,
+}
+
+pub struct ProgressObservers {
+    pub video_playout: Arc<TrackProgress>,
+    pub audio_playout: Arc<TrackProgress>,
+    pub video_ingest: Arc<TrackProgress>,
+    pub audio_ingest: Arc<TrackProgress>,
+}
+
+pub fn install_progress_probes(
+    bin: &gst::Bin,
+    names: ProgressNames<'_>,
+) -> Result<ProgressObservers, String> {
+    let observers = ProgressObservers {
+        video_playout: Arc::new(TrackProgress::default()),
+        audio_playout: Arc::new(TrackProgress::default()),
+        video_ingest: Arc::new(TrackProgress::default()),
+        audio_ingest: Arc::new(TrackProgress::default()),
+    };
+    add_progress_probe(
+        bin,
+        names.video_playout,
+        Arc::clone(&observers.video_playout),
+    )?;
+    add_progress_probe(
+        bin,
+        names.audio_playout,
+        Arc::clone(&observers.audio_playout),
+    )?;
+    add_progress_probe(bin, names.video_ingest, Arc::clone(&observers.video_ingest))?;
+    add_progress_probe(bin, names.audio_ingest, Arc::clone(&observers.audio_ingest))?;
+    Ok(observers)
+}
+
 #[derive(Default)]
 pub struct TimingControl(AtomicI64);
 
@@ -56,52 +96,6 @@ pub fn add_timing_probe(
         gst::PadProbeReturn::Ok
     })
     .ok_or_else(|| format!("failed to time '{element_name}'"))?;
-    Ok(())
-}
-
-pub fn add_timestamp_normalizer(
-    bin: &gst::Bin,
-    element_name: &str,
-    pipeline: &gst::Pipeline,
-) -> Result<(), String> {
-    let element = bin
-        .by_name(element_name)
-        .ok_or_else(|| format!("source has no '{element_name}' element"))?;
-    let pad = element
-        .static_pad("src")
-        .ok_or_else(|| format!("'{element_name}' has no src pad"))?;
-    let pipeline = pipeline.clone();
-    let offset = Arc::new(AtomicI64::new(i64::MIN));
-    pad.add_probe(gst::PadProbeType::BUFFER, move |_, info| {
-        let Some(buffer) = info.buffer_mut() else {
-            return gst::PadProbeReturn::Ok;
-        };
-        let pts = buffer.pts().map_or(0, gst::ClockTime::nseconds);
-        let current = offset.load(Ordering::Relaxed);
-        let current = if current == i64::MIN {
-            let running = pipeline
-                .current_running_time()
-                .map_or(0, gst::ClockTime::nseconds);
-            let calculated = i64::try_from(running)
-                .unwrap_or(i64::MAX)
-                .saturating_sub(i64::try_from(pts).unwrap_or(i64::MAX));
-            offset.store(calculated, Ordering::Relaxed);
-            calculated
-        } else {
-            current
-        };
-        let buffer = buffer.make_mut();
-        buffer.set_pts(Some(gst::ClockTime::from_nseconds(
-            pts.saturating_add_signed(current),
-        )));
-        if let Some(dts) = buffer.dts() {
-            buffer.set_dts(Some(gst::ClockTime::from_nseconds(
-                dts.nseconds().saturating_add_signed(current),
-            )));
-        }
-        gst::PadProbeReturn::Ok
-    })
-    .ok_or_else(|| format!("failed to normalize '{element_name}'"))?;
     Ok(())
 }
 

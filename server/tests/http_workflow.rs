@@ -149,6 +149,8 @@ async fn ui_source_scene_and_unavailable_media_commands_are_truthful() {
     assert_eq!(audio["status"], "applied", "{audio}");
     assert_eq!(timing["status"], "rejected");
     let current = harness.snapshot(&cookie).await;
+    assert!(current["project"]["audioRoutes"][0]["inputPeakDb"].is_null());
+    assert!(current["project"]["audioRoutes"][0]["outputPeakDb"].is_null());
     assert_eq!(
         current["project"]["scenes"][0]["items"]
             .as_array()

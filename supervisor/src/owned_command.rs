@@ -43,6 +43,11 @@ impl OwnedCommand {
                 "LIVE_PRODUCTION_OWNER_START_TICKS",
                 owner.start_ticks.to_string(),
             );
+        if std::env::var("LD_PRELOAD")
+            .is_ok_and(|value| value == "/lib/libgcompat.so.0" || value == "libgcompat.so.0")
+        {
+            command.env_remove("LD_PRELOAD");
+        }
         let child = command.spawn().context("start supervised command")?;
         let group =
             Pid::from_raw(i32::try_from(child.id()).context("child PID exceeds supported range")?);

@@ -13,6 +13,7 @@ Environment=LIVE_PRODUCTION_STATE_DIR=/var/lib/live-production
 Environment=LIVE_PRODUCTION_WEB_DIST=/opt/live-production/web/dist
 Environment=LIVE_PRODUCTION_BIND=127.0.0.1:3000
 Environment=LIVE_PRODUCTION_SECURE_COOKIE=true
+Environment=RUST_LOG=info,gst_plugin_webrtc_signalling=warn
 StateDirectory=live-production
 StateDirectoryMode=0700
 UMask=0077

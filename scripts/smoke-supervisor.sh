@@ -1,6 +1,7 @@
 #!/bin/sh
 
 . "$PROJECT_ROOT/scripts/env.sh"
+ulimit -c 0
 if [ "${LIVE_PRODUCTION_SMOKE_SCOPE:-}" != "$0" ]; then
   CARGO_BUILD_JOBS=${CARGO_BUILD_JOBS:-2} cargo build --locked \
     --manifest-path "$PROJECT_ROOT/Cargo.toml" -q -p live-production-supervisor

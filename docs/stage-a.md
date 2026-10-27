@@ -108,6 +108,8 @@ Observed results:
 
 ## Latest integrated validation
 
+The current complete required acceptance started **2026-10-27 22:48:49 UTC** against `dea4906` in detached `var/internal-validation.TRI6kS` and passed. It includes actual abrupt process death, simultaneous publishers, owner-authorized reconnect epochs, clean provenance/export/reload and a three-minute SRT drift/timing/recording fixture. [Exact internal evidence](internal-gates-2026-10-27.md) records the measured profile and limits; the running studio was not rebuilt or deployed.
+
 The full acceptance run started on 2026-10-27 at 14:34:21 UTC against code checkpoint `ef2e70d` passed all workspace tests, all-target strict Clippy, browser media, output and extension gates. Its fresh Stage A artifacts are `var/media-stage-a.7r3dHH/`; calibration again measured exactly `250.000 ms`. The result details and remaining partial gates are tracked in `docs/acceptance.md`; historical measurements above are not target-machine throughput claims.
 
 Dynamic compositors now keep an engine-owned hidden live input so adding the first scene layer does not reset an otherwise padless compositor's output timeline. Native video taps preserve engine-run-scoped reference timestamps. A decoded multi-fragment recording test reconciles actual visual transitions with authoritative Program Take PTS. Timing transactions also have a paused/resume regression proving failed commands cannot apply later.
@@ -128,10 +130,10 @@ Dynamic compositors now keep an engine-owned hidden live input so adding the fir
   ingress ICE remains unverified, and reliable browser frame/revision correlation is not claimed.
 - Signed timing now uses timestamp normalization, bounded decoded history and scheduling probes
   for the controlled synthetic/SRT profile. The authenticated SRT test observes retained decoded
-  video/audio and rejected infeasible timing. Sustained independent-clock drift, arbitrary sender
-  profiles and long-running transition/memory stress remain unverified.
+   video/audio and rejected infeasible timing. Three-minute independent-clock reporting and live
+   transition/memory bounds now pass; arbitrary sender profiles and multi-day capacity are not claimed.
 - Recorder, preview, and publisher isolation are measured. Publishers have independent retry and
   manual-stop lifecycles; storage failure and graceful `SIGTERM` recording recovery are covered in
   `docs/output-evidence.md`.
-- Hardware encoding, sustained 1080p60/4K capacity, long-run clock drift, abrupt `SIGKILL` recovery,
-  and intended editor import compatibility were not tested.
+- Hardware encoding, sustained 1080p60/4K capacity and intended editor import compatibility remain
+   external/unverified. Actual `SIGKILL` recovery and the measured drift profile now pass.

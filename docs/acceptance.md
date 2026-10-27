@@ -14,6 +14,10 @@ This ledger separates observed results from required gates. An unchecked item is
 
 ## Latest controlled run
 
+The current implementation and **all requested feasible internal gates pass** at code checkpoint `dea49063eb99d54f927a500d3d52216a0aec2acf`. Complete required acceptance started **2026-10-27 22:48:49 UTC** in detached `var/internal-validation.TRI6kS` and exited zero. Its own `target/`, bundle, state and fixtures kept the running studio unchanged. Exact report: `var/internal-validation.TRI6kS/var/acceptance/latest.txt`. See [internal gate implementation and measured evidence](internal-gates-2026-10-27.md) for SIGKILL raw hashes, simultaneous publisher/failed-handshake proof, three-minute timing/drift metrics, clean provenance and reviewer approval. Frontend tests now total **33**. No merge/deploy or public output was performed; studio remains the prior running revision.
+
+### Earlier checkpoint evidence
+
 `./scripts/acceptance.sh`, started **2026-10-27 14:34:21 UTC**, exited successfully against committed code checkpoint `ef2e70db8c37fbd3f4eebfb20c4fba2e5331d5ed`. Only these evidence-ledger updates followed the tested code. The command report is `var/acceptance/latest.txt`.
 
 - All workspace Rust tests, formatting, strict all-target Clippy, and the 250-code-line source-size gate passed.
@@ -36,18 +40,18 @@ The browser evidence records the initial unauthenticated `401` response. The bui
 | Two-source video and two independent audio tracks | Real decoded/composed media and negotiated formats | Pass for synthetic Stage A profile; external sender separation unverified |
 | +250 ms correction | Combined recording measurement, tolerance one frame plus measured audio block | Pass: `250.000 ms` combined AAC fixture |
 | Feasible/infeasible signed correction | Actual retained history and rejected infeasible transaction | Pass for controlled synthetic and authenticated SRT tests |
-| Bounded live timing transition | Recorded discontinuity and progress/memory observations | Partial: explicit discontinuity and timeout cancellation tested; sustained transition/memory stress pending |
-| Drift | Long-run independent-clock observation and correction/reporting | Pending |
+| Bounded live timing transition | Recorded discontinuity and progress/memory observations | Pass: three-minute native fixture, three signed transactions, real recorded pixels/PCM, bounded queues/RSS |
+| Drift | Long-run independent-clock observation and correction/reporting | Pass for measured three-minute profile: positive/negative receiver-ingress estimates, fit statistics, bounded history and reconnect reset |
 | Authoritative Preview and Program | Actual server-rendered browser media with separate control/media state | Pass locally: decoded video and selected-source audio; remote ICE unverified |
 | Exact Take and draft isolation | Browser workflow plus recorded revision/timestamp evidence | Pass for controlled browser, pinned-history, pixel/PTS and cancellation regressions |
 | Clean and Program recordings | Independent segment finalization, decode and checksums | Pass: `docs/output-evidence.md` |
 | Local RTMPS plus second receiver | Actual encoded delivery; disconnect/stall isolation | Pass: `docs/output-evidence.md` |
-| Authenticated ingest/reconnect | Rejected unknown/duplicate publisher, stable IDs and continuity gaps | Partial: wrong-secret rejection and stable-ID/gap tests pass; simultaneous duplicate-publisher gate pending |
+| Authenticated ingest/reconnect | Rejected unknown/duplicate publisher, stable IDs and continuity gaps | Pass: barrier-started native publishers, peer leases, wrong-secret/correct-streamid recovery, stable IDs and generation-2 reconnect |
 | Storage faults | Affected recorder fails truthfully; unrelated media progresses | Pass: `docs/output-evidence.md` |
-| Restart/browser reconnect | Public outputs remain stopped; no replayed live commands | Pass for controlled graceful restart, stopped outputs and browser-close scenarios; abrupt crash recovery remains unverified |
-| Concurrency | Stale writes and undo rejected; local work recoverable | Stale server writes and two-browser conflict/local-draft recovery pass; cross-client undo stress remains unverified |
-| Extension proof | Editor package reconciles source/reference/history; example uses public commands | Pass for public commands and bounded Program-file reconciliation; clean-source continuity generation and intended editor import remain unverified |
-| Independent reviews | Goal-based browser and engineering findings addressed | Retained UI reviewer PASS on fresh complete captures; focused engineering timing/mapping findings fixed and regression-verified. Broader release/security/performance audit is not claimed |
+| Restart/browser reconnect | Public outputs remain stopped; no replayed live commands | Pass: actual SIGKILL/reopen discovers two closed files and partial tail, preserves all raw hashes/gaps/export inventory; restored outputs stopped |
+| Concurrency | Stale writes and undo rejected; local work recoverable | Pass: stale server writes, two-browser conflict recovery and two-view stale undo preserves the other accepted edit |
+| Extension proof | Editor package reconciles source/reference/history; example uses public commands | Pass: captured clean source/video/audio generation intervals and gaps, proportional per-file mapping, precise JSON and reload; actual editor import remains external |
+| Independent reviews | Goal-based browser and engineering findings addressed | Original engineering reviewer APPROVE after correcting blockers; isolated real-browser recovery/drift/provenance proof passes. Universal audit/performance certification is not claimed |
 
 ## Correctness repairs covered by this run
 
@@ -57,7 +61,7 @@ The browser evidence records the initial unauthenticated `401` response. The bui
 - A real-browser negative regression proves the private-audio wait cannot pass without a source stream. The old async `waitForFunction` predicate returned too early; awaited polling now verifies the selected peer's actual packets.
 - Routing captures checkbox values synchronously instead of retaining an expired React event. Canvas gestures freeze their coordinate transform, distinguish clicks from drags and cancel immediate Escape before workspace shortcuts; saves retain selection. Transport-error recovery does not erase genuine command failures. Explicit layout rows, wrapping actions and pinned local CJK fonts address the reviewed clipping and missing-glyph defects.
 
-Controlled acceptance is not final release approval. Long-run drift, sustained transition stress, simultaneous duplicate publishers, abrupt-crash recovery, cross-client undo stress, clean-source generation provenance and the external gates below remain unverified. No public broadcast was started. The intended editor's import, independent original-capture/audio alignment and target Ubuntu deployment performance are not established by these local passes.
+Controlled acceptance is not an external production certification. The internal gates above are implemented and measured, not deferred. Three-minute bounded software evidence is not a multi-day soak or universal clock/capture alignment guarantee. The intended editor's import and target Ubuntu/hardware/OBS/platform/remote-laptop behavior below remain unverified. No public broadcast was started and the running studio was not updated.
 
 ## External gates not supplied
 

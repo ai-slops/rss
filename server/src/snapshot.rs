@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::model::{Asset, Canvas, Id, Output, Recording, Scene, Source, TrackKind};
 
@@ -56,7 +56,7 @@ pub struct TrackSnapshot {
     pub late_frames: u64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AudioRouteSnapshot {
     pub track_id: Id,
@@ -83,6 +83,7 @@ pub struct PreviewSnapshot {
 pub struct ProgramSnapshot {
     pub scene_id: Id,
     pub scene_revision: String,
+    pub applied_scene: Scene,
     pub program_revision: String,
     pub applied_at_ns: String,
     pub health: &'static str,
@@ -104,9 +105,26 @@ pub struct OutputStatusSnapshot {
 pub struct PluginSnapshot {
     pub id: String,
     pub name: String,
+    pub storage_namespace: &'static str,
     pub available: bool,
     pub enabled: bool,
     pub status: String,
+    pub commands: Vec<PluginCommandSnapshot>,
+    pub panel: Option<PluginPanelSnapshot>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginCommandSnapshot {
+    pub name: &'static str,
+    pub text: &'static str,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PluginPanelSnapshot {
+    pub kind: &'static str,
+    pub title: &'static str,
 }
 
 #[derive(Clone, Debug, Serialize)]

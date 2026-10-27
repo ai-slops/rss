@@ -61,23 +61,54 @@ impl Owner {
             Action::SceneTake(payload) => self.take_scene(command, payload)?,
             Action::SceneItemAdd(payload) => self.add_scene_item(command, &payload.source_id)?,
             Action::CuePrevious(_) => self.cue_previous(command)?,
-            Action::SourceCreate(payload) => self.create_source(&payload.name, &payload.adapter)?,
+            Action::SourceCreate(payload) => {
+                self.create_source(command, &payload.name, &payload.adapter)?
+            }
             Action::SourceConfigure(payload) => {
-                let source = self
+                let source_index = self
                     .project
                     .sources
-                    .iter_mut()
-                    .find(|source| source.id == command.target_id)
+                    .iter()
+                    .position(|source| source.id == command.target_id)
                     .ok_or_else(|| AppError::Invalid("Source no longer exists.".into()))?;
-                if payload.source.id != source.id {
+                let current =
+                    self.project.sources.get(source_index).ok_or_else(|| {
+                        AppError::Internal(anyhow::anyhow!("source index missing"))
+                    })?;
+                if payload.source.id != current.id
+                    || payload.source.tracks.len() != current.tracks.len()
+                    || payload
+                        .source
+                        .tracks
+                        .iter()
+                        .zip(&current.tracks)
+                        .any(|(next, old)| next.id != old.id || next.kind != old.kind)
+                {
                     return Err(AppError::Invalid(
-                        "Source identity cannot be changed.".into(),
+                        "Source and track identity cannot be changed.".into(),
                     ));
                 }
                 validation::name(&payload.source.name)?;
+                let credential = self
+                    .store
+                    .ingest_credential(&payload.source.id.0)
+                    .map_err(AppError::Internal)?;
+                let media = self.media.configure_source(
+                    &command.id,
+                    self.media.engine_run_id(),
+                    crate::coordinator_sources::source_spec(&payload.source, &credential)?,
+                )?;
+                let source =
+                    self.project.sources.get_mut(source_index).ok_or_else(|| {
+                        AppError::Internal(anyhow::anyhow!("source index missing"))
+                    })?;
                 *source = payload.source.clone();
                 self.bump_project()?;
-                Applied::revision(self.project.revision.clone())
+                Applied {
+                    revision: Some(self.project.revision.clone()),
+                    at_ns: media.at_ns.value().to_string(),
+                    plugin_result: None,
+                }
             }
             Action::SourceDelete(_) => self.delete_source(command)?,
             Action::AudioApply(payload) => self.apply_audio_routes(command, &payload.routes)?,
@@ -90,17 +121,11 @@ impl Owner {
             Action::AudioMuteSet(payload) => self.set_audio(command, None, Some(payload.muted))?,
             Action::TimingApply(payload) => self.apply_timing(command, payload)?,
             Action::OutputCreate(payload) => self.create_output(&payload.name, &payload.adapter)?,
-            Action::OutputStart(_) | Action::OutputStop(_) => {
-                return Err(AppError::Unavailable(
-                    "The native media engine has no Program-connected output adapter for this configured output.".into()
-                ));
-            }
+            Action::OutputStart(payload) => self.start_output(command, payload.confirm_public)?,
+            Action::OutputStop(_) => self.stop_output(command)?,
             Action::OutputDelete(_) => self.delete_output(command)?,
-            Action::Plugin(_) => {
-                return Err(AppError::Unavailable(
-                    "The requested plugin is unavailable.".into(),
-                ));
-            }
+            Action::Plugin(payload) => self.apply_plugin(command, payload)?,
+            Action::AssetUpload(payload) => self.upload_asset(command, payload)?,
         };
         self.store.save(&self.project).map_err(AppError::Internal)?;
         Ok(applied)
@@ -186,6 +211,7 @@ impl Owner {
         Ok(Applied {
             revision: Some(self.project.revision.clone()),
             at_ns: media.at_ns.value().to_string(),
+            plugin_result: None,
         })
     }
 }
@@ -195,6 +221,7 @@ impl Applied {
         Self {
             revision: Some(revision),
             at_ns: now_ns(),
+            plugin_result: None,
         }
     }
 }

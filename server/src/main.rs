@@ -12,6 +12,7 @@ use live_production::{
     routes::{self, AppState},
 };
 use live_production_media::preview::PreviewOutputs;
+use live_production_media::protocol::EngineRunId;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -26,15 +27,18 @@ async fn main() -> anyhow::Result<()> {
     let root = std::env::current_dir().context("resolve working directory")?;
     let state_directory = env_path("LIVE_PRODUCTION_STATE_DIR", root.join("var"));
     prepare_state_directory(&state_directory)?;
+    let _state_lock = lock_state_directory(&state_directory)?;
     let password = operator_password(&state_directory)?;
     let media = MediaBridge::spawn().map_err(anyhow::Error::from)?;
+    let engine_run_id = EngineRunId::new(media.engine_run_id()).map_err(anyhow::Error::from)?;
     let coordinator = Coordinator::spawn(state_directory.join("project.sqlite"), media)
         .map_err(anyhow::Error::from)?;
+    let shutdown_coordinator = coordinator.clone();
     let secure_cookie = std::env::var("LIVE_PRODUCTION_SECURE_COOKIE")
         .unwrap_or_else(|_| "true".into())
         .parse::<bool>()
         .context("LIVE_PRODUCTION_SECURE_COOKIE must be true or false")?;
-    let previews = PreviewOutputs::spawn().map_err(anyhow::Error::from)?;
+    let previews = PreviewOutputs::spawn(&engine_run_id).map_err(anyhow::Error::from)?;
     let media_state = live_production::routes_media::MediaState::new(previews);
     let state = AppState::with_media(&password, secure_cookie, coordinator, media_state);
     let web_dist = env_path("LIVE_PRODUCTION_WEB_DIST", root.join("web/dist"));
@@ -46,10 +50,16 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("bind HTTP listener")?;
     tracing::info!(%address, state_directory = %state_directory.display(), "live production daemon started");
-    axum::serve(listener, routes::router(state, web_dist))
+    let serve_result = axum::serve(listener, routes::router(state, web_dist))
         .with_graceful_shutdown(shutdown_signal())
         .await
-        .context("serve HTTP")?;
+        .context("serve HTTP");
+    let shutdown_result = shutdown_coordinator
+        .shutdown()
+        .await
+        .map_err(anyhow::Error::from);
+    serve_result?;
+    shutdown_result?;
     Ok(())
 }
 
@@ -67,6 +77,21 @@ fn prepare_state_directory(path: &Path) -> anyhow::Result<()> {
             .with_context(|| format!("protect state directory {}", path.display()))?;
     }
     Ok(())
+}
+
+fn lock_state_directory(path: &Path) -> anyhow::Result<fs::File> {
+    let mut options = fs::OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.mode(0o600);
+    }
+    let file = options
+        .open(path.join("daemon.lock"))
+        .context("open daemon ownership lock")?;
+    file.try_lock().context("Another daemon owns this state directory. Stop that service or choose a separate LIVE_PRODUCTION_STATE_DIR.")?;
+    Ok(file)
 }
 
 fn operator_password(state_directory: &Path) -> anyhow::Result<String> {
@@ -139,7 +164,7 @@ async fn shutdown_signal() {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_operator_password;
+    use super::{lock_state_directory, validate_operator_password};
 
     #[test]
     fn weak_operator_password_is_rejected() {
@@ -149,5 +174,14 @@ mod tests {
     #[test]
     fn generated_strength_password_is_accepted() {
         assert!(validate_operator_password("0123456789abcdef0123456789abcdef").is_ok());
+    }
+
+    #[test]
+    fn one_state_directory_has_exactly_one_daemon_owner() {
+        let directory = tempfile::tempdir().expect("state directory");
+        let first = lock_state_directory(directory.path()).expect("first owner");
+        assert!(lock_state_directory(directory.path()).is_err());
+        drop(first);
+        assert!(lock_state_directory(directory.path()).is_ok());
     }
 }

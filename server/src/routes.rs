@@ -2,7 +2,7 @@ use std::{convert::Infallible, path::PathBuf, sync::Arc};
 
 use axum::{
     Json, Router,
-    extract::{Query, State, rejection::JsonRejection},
+    extract::{Path, Query, State, rejection::JsonRejection},
     http::{HeaderMap, HeaderValue, StatusCode, header},
     response::{
         IntoResponse, Response,
@@ -11,8 +11,8 @@ use axum::{
     routing::{get, post},
 };
 use serde::Deserialize;
-use tokio::sync::Mutex;
-use tokio_stream::{StreamExt, wrappers::BroadcastStream};
+use tokio::sync::{Mutex, broadcast, mpsc};
+use tokio_stream::wrappers::ReceiverStream;
 use tower_http::{
     limit::RequestBodyLimitLayer,
     services::{ServeDir, ServeFile},
@@ -29,6 +29,7 @@ use crate::{
 pub struct AppState {
     auth: Arc<Mutex<Auth>>,
     coordinator: Coordinator,
+    pub(crate) media: crate::routes_media::MediaState,
 }
 
 impl AppState {
@@ -37,7 +38,26 @@ impl AppState {
         Self {
             auth: Arc::new(Mutex::new(Auth::new(password, secure_cookie))),
             coordinator,
+            media: crate::routes_media::MediaState::disabled(),
         }
+    }
+
+    #[must_use]
+    pub fn with_media(
+        password: &str,
+        secure_cookie: bool,
+        coordinator: Coordinator,
+        media: crate::routes_media::MediaState,
+    ) -> Self {
+        Self {
+            auth: Arc::new(Mutex::new(Auth::new(password, secure_cookie))),
+            coordinator,
+            media,
+        }
+    }
+
+    pub(crate) async fn authorize(&self, headers: &HeaderMap) -> Result<()> {
+        self.auth.lock().await.authorize(headers)
     }
 }
 
@@ -48,8 +68,14 @@ struct Login {
 
 #[derive(Deserialize)]
 struct EventQuery {
-    #[allow(dead_code)]
     after: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DestinationProvisioning {
+    destination_id: String,
+    url: String,
 }
 
 pub fn router(state: AppState, web_dist: PathBuf) -> Router {
@@ -59,12 +85,45 @@ pub fn router(state: AppState, web_dist: PathBuf) -> Router {
         .route("/auth/logout", post(logout))
         .route("/snapshot", get(snapshot))
         .route("/commands", post(command))
+        .layer(axum::extract::DefaultBodyLimit::max(6_000_000))
+        .route("/output-destinations", post(provision_destination))
+        .route(
+            "/sources/{id}/publishing-endpoint",
+            get(source_publishing_endpoint),
+        )
         .route("/events", get(events))
-        .layer(RequestBodyLimitLayer::new(1_048_576));
+        .merge(crate::routes_media::router())
+        .layer(RequestBodyLimitLayer::new(6_000_000));
     Router::new()
         .nest("/api/v1", api)
         .fallback_service(ServeDir::new(web_dist).fallback(ServeFile::new(index)))
         .with_state(state)
+}
+
+async fn source_publishing_endpoint(
+    State(state): State<AppState>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Json<serde_json::Value>> {
+    state.authorize(&headers).await?;
+    Ok(Json(
+        state.coordinator.source_publishing_endpoint(id).await?,
+    ))
+}
+
+async fn provision_destination(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: std::result::Result<Json<DestinationProvisioning>, JsonRejection>,
+) -> Result<StatusCode> {
+    mutation_headers(&headers)?;
+    state.auth.lock().await.authorize(&headers)?;
+    let Json(destination) = body.map_err(|error| AppError::Invalid(error.body_text()))?;
+    state
+        .coordinator
+        .provision_destination(destination.destination_id, destination.url)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }
 
 async fn login(
@@ -116,13 +175,66 @@ async fn command(
 async fn events(
     State(state): State<AppState>,
     headers: HeaderMap,
-    Query(_query): Query<EventQuery>,
+    Query(query): Query<EventQuery>,
 ) -> Result<Sse<impl tokio_stream::Stream<Item = std::result::Result<Event, Infallible>>>> {
     state.auth.lock().await.authorize(&headers)?;
-    let initial = tokio_stream::once(Ok(Event::default().data("{}")));
-    let updates = BroadcastStream::new(state.coordinator.subscribe()).map(|event| match event {
-        Ok(()) => Ok(Event::default().data("{}")),
-        Err(_) => Ok(Event::default().event("gap").data("{}")),
+    let after = query.after.unwrap_or_else(|| "0".into());
+    let parsed_after = after
+        .parse::<i64>()
+        .map_err(|_| AppError::Invalid("Event cursor must be an integer.".into()))?;
+    if parsed_after < 0 {
+        return Err(AppError::Invalid(
+            "Event cursor must be non-negative.".into(),
+        ));
+    }
+    let mut notifications = state.coordinator.subscribe();
+    let initial = state.coordinator.events(&after).await?;
+    let coordinator = state.coordinator.clone();
+    let (sender, receiver) = mpsc::channel(64);
+    tokio::spawn(async move {
+        let mut cursor = after;
+        if send_page(&sender, &mut cursor, initial).await.is_err() {
+            return;
+        }
+        loop {
+            match notifications.recv().await {
+                Ok(()) | Err(broadcast::error::RecvError::Lagged(_)) => {
+                    let Ok(page) = coordinator.events(&cursor).await else {
+                        return;
+                    };
+                    if send_page(&sender, &mut cursor, page).await.is_err() {
+                        return;
+                    }
+                }
+                Err(broadcast::error::RecvError::Closed) => return,
+            }
+        }
     });
-    Ok(Sse::new(initial.chain(updates)).keep_alive(KeepAlive::default()))
+    Ok(Sse::new(ReceiverStream::new(receiver)).keep_alive(KeepAlive::default()))
+}
+
+async fn send_page(
+    sender: &mpsc::Sender<std::result::Result<Event, Infallible>>,
+    cursor: &mut String,
+    page: crate::observation::EventPage,
+) -> std::result::Result<(), ()> {
+    if let Some(gap) = page.gap {
+        let data = serde_json::to_string(&gap).map_err(|_| ())?;
+        sender
+            .send(Ok(Event::default().event("gap").data(data)))
+            .await
+            .map_err(|_| ())?;
+    }
+    for stored in page.events {
+        cursor.clone_from(&stored.cursor);
+        let data = serde_json::to_string(&stored).map_err(|_| ())?;
+        sender
+            .send(Ok(Event::default()
+                .id(stored.cursor)
+                .event(stored.kind)
+                .data(data)))
+            .await
+            .map_err(|_| ())?;
+    }
+    Ok(())
 }

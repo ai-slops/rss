@@ -12,5 +12,6 @@
       "correctness": { "noUnusedVariables": "error", "noUnusedImports": "error" }
     }
   },
-  "files": { "includes": ["src/**/*", "vite.config.ts"] }
+  "files": { "includes": ["src/**/*", "vite.config.ts"] },
+  "overrides": [{ "includes": ["src/gst-channel.d.ts"], "linter": { "rules": { "style": { "noDefaultExport": "off" } } } }]
 }

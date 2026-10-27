@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { optionalTrackDriftSchema, recordingRuntimeSchema } from "./runtimeSchema"
 
 const id = z.string().min(1)
 const revision = z.string().min(1)
@@ -53,6 +54,7 @@ const trackSchema = z.object({
   format: z.string().default("Unknown"),
   bufferMs: z.number().int().nonnegative().default(0),
   lateFrames: z.number().int().nonnegative().default(0),
+  drift: optionalTrackDriftSchema,
 })
 
 const sourceSchema = z.object({
@@ -61,7 +63,7 @@ const sourceSchema = z.object({
   enabled: z.boolean(),
   adapter: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("synthetic"), pattern: z.string(), frequencyHz: z.number() }),
-    z.object({ kind: z.literal("srt"), port: z.number(), bufferMs: z.number() }),
+    z.object({ kind: z.literal("srt"), bindAddress: z.string().default("0.0.0.0"), port: z.number(), bufferMs: z.number() }),
   ]),
   tracks: z.array(trackSchema),
   recordOnConnect: z.boolean(),
@@ -95,20 +97,6 @@ const outputStatusSchema = z.object({
   lastMediaAtNs: z.string().nullable(),
   error: z.string().nullable(),
   platformStatus: z.string(),
-})
-
-const recordingSchema = z.object({
-  id,
-  outputId: id,
-  name: z.string(),
-  path: z.string(),
-  tapPoint: z.enum(["program", "clean_source"]),
-  startNs: z.string(),
-  endNs: z.string().nullable(),
-  bytes: z.string(),
-  validation: z.string(),
-  sha256: z.string().nullable(),
-  gaps: z.array(z.string()),
 })
 
 const assetSchema = z.object({
@@ -166,7 +154,7 @@ export const snapshotSchema = z.object({
     previousSceneId: id.nullable(),
   }),
   outputStatuses: z.array(outputStatusSchema),
-  recordings: z.array(recordingSchema),
+  recordings: z.array(recordingRuntimeSchema),
   plugins: z.array(pluginSchema),
   storage: z.object({ freeBytes: z.string(), totalBytes: z.string(), writable: z.boolean() }),
 })

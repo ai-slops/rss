@@ -1,4 +1,5 @@
 import ky, { HTTPError } from "ky"
+import { type PublishingEndpoint, publishingEndpointSchema } from "./runtimeSchema"
 import {
   type Command,
   type CommandResponse,
@@ -69,6 +70,14 @@ export async function getSnapshot(): Promise<Snapshot> {
 export async function sendCommand(command: Command): Promise<CommandResponse> {
   try {
     return commandResponseSchema.parse(await api.post("commands", { json: command }).json())
+  } catch (error) {
+    return translateError(error)
+  }
+}
+
+export async function getSourcePublishingEndpoint(sourceId: string): Promise<PublishingEndpoint> {
+  try {
+    return publishingEndpointSchema.parse(await api.get(`sources/${encodeURIComponent(sourceId)}/publishing-endpoint`).json())
   } catch (error) {
     return translateError(error)
   }

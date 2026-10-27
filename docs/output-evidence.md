@@ -40,13 +40,20 @@ CARGO_BUILD_JOBS=3 cargo test -p live-production --test http_outputs
 CARGO_BUILD_JOBS=3 cargo test -p live-production --test http_recovery
 CARGO_BUILD_JOBS=3 cargo test --workspace
 CARGO_BUILD_JOBS=3 cargo clippy --workspace --lib --bins -- -D warnings
-sh scripts/output-acceptance.sh var/output-acceptance-final
+sh scripts/output-acceptance.sh var/output-acceptance-final3
 ```
 
-The workspace test run passed all server/media unit and integration tests. The strict production
-library/binary Clippy gate passed. The all-targets Clippy gate remains blocked by pre-existing
-`expect()` calls in unrelated server unit-test modules; output production code is clean under the
-strict library/binary gate.
+The latest full `./scripts/acceptance.sh` run, started on 2026-10-27 at 14:34:21 UTC against code checkpoint `ef2e70d`, passed all
+workspace tests and strict all-target Clippy. Its output artifacts are under
+`var/output-acceptance/`; it finalized and decoded eight recording fragments, passed two controlled
+RTMPS receivers and stall isolation, restored three finalized segments after graceful shutdown,
+and drove the rendered output controls. The `var/output-acceptance-final3/` paths below retain
+the earlier detailed measurement and should not be confused with this latest run.
+
+New catalogs also carry bounded per-file engine-media mappings when native producer reference
+timestamps are available. They do not reinterpret the older broad session wall bounds as file
+PTS. The real cross-fragment transition proof and legacy/unmatched-run behavior are described in
+`docs/extensions.md`.
 
 ## Recording gate
 
@@ -55,7 +62,7 @@ source recorder through the same command API used by the UI. It started both out
 ran for three seconds, stopped each independently, fetched the final snapshot, recomputed every
 catalog checksum, and decoded every file.
 
-Observed under `var/output-acceptance-final/recording/`:
+Observed under `var/output-acceptance-final3/recording/`:
 
 - Seven finalized Matroska segments: three Program and four clean-source segments.
 - Program files: H.264 `960x540` plus stereo AAC `48 kHz`.
@@ -69,10 +76,10 @@ Observed under `var/output-acceptance-final/recording/`:
 
 Primary artifacts:
 
-- `var/output-acceptance-final/recording/final-snapshot.json`
-- `var/output-acceptance-final/recording/state/recordings/*/*/catalog.json`
-- `var/output-acceptance-final/recording/state/recordings/*/*/segment-*.mkv`
-- `var/output-acceptance-final/recording/server.log`
+- `var/output-acceptance-final3/recording/final-snapshot.json`
+- `var/output-acceptance-final3/recording/state/recordings/*/*/catalog.json`
+- `var/output-acceptance-final3/recording/state/recordings/*/*/segment-*.mkv`
+- `var/output-acceptance-final3/recording/server.log`
 
 ## Controlled RTMPS and independence gate
 
@@ -81,25 +88,25 @@ process environment, and ran two independent TLS-fronted RTMP receivers. The pro
 manager published the Program tap to both RTMPS destination IDs. The stall phase terminated the
 primary TLS receiver while leaving the secondary receiver untouched.
 
-Observed under `var/output-acceptance-final/network/`:
+Observed under `var/output-acceptance-final3/network/`:
 
 - Healthy phase: both destination snapshots were `running` with observed media activity.
 - Stall phase: primary snapshot was `retrying`; secondary remained `running` with media activity.
-- Healthy primary: H.264 `640x360`, stereo AAC `48 kHz`, `6.904 s`, `236872` bytes.
+- Healthy primary: H.264 `640x360`, stereo AAC `48 kHz`, `6.904 s`, `236889` bytes.
 - Healthy secondary: H.264 `640x360`, stereo AAC `48 kHz`, `6.912 s`, `237248` bytes.
-- Stalled primary retained a decodable `1.904 s`, `64760` byte partial FLV.
+- Stalled primary retained a decodable `1.904 s`, `64709` byte partial FLV.
 - Unaffected secondary continued to a decodable `16.904 s`, `576229` byte FLV.
 - All four FLV files passed full FFmpeg decode and have checksums in `sha256.txt`.
 
 Primary artifacts:
 
-- `var/output-acceptance-final/network/healthy-report.json`
-- `var/output-acceptance-final/network/stall-report.json`
-- `var/output-acceptance-final/network/healthy-primary.flv`
-- `var/output-acceptance-final/network/healthy-secondary.flv`
-- `var/output-acceptance-final/network/stall-primary.flv`
-- `var/output-acceptance-final/network/stall-secondary.flv`
-- `var/output-acceptance-final/network/sha256.txt`
+- `var/output-acceptance-final3/network/healthy-report.json`
+- `var/output-acceptance-final3/network/stall-report.json`
+- `var/output-acceptance-final3/network/healthy-primary.flv`
+- `var/output-acceptance-final3/network/healthy-secondary.flv`
+- `var/output-acceptance-final3/network/stall-primary.flv`
+- `var/output-acceptance-final3/network/stall-secondary.flv`
+- `var/output-acceptance-final3/network/sha256.txt`
 
 ## Fault and restart gates
 
@@ -121,4 +128,19 @@ source recording through coordinator commands.
 `scripts/output-shutdown-gate.sh` sent `SIGTERM` while a Program recorder was active. The daemon
 exited zero after finalizing three decoded segments. A fresh daemon using the same state directory
 restored all three catalog entries and reported the output as desired/actual `stopped`. Evidence is
-under `var/output-acceptance-final/shutdown/`.
+under `var/output-acceptance-final3/shutdown/`.
+
+## Browser command gate
+
+`scripts/output-browser-gate.sh` drove a real project-local Chromium against the authenticated
+production server. Through the rendered Outputs panel it created and ran/stopped a Program
+recorder, created a clean-source recorder from the source-ID selector, and created an RTMPS output
+using only the provisioned destination ID. The RTMPS URL was provisioned separately through the
+authorized server endpoint and never appeared in the DOM. Fresh `1280x900` and `375x812`
+screenshots show the controls without overlap or horizontal overflow.
+
+Artifacts:
+
+- `var/output-acceptance-final3/browser/outputs-1280.png`
+- `var/output-acceptance-final3/browser/outputs-375.png`
+- `var/output-acceptance-final3/browser/server.log`

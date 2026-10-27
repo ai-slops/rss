@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 import { ApiError, commandId, getSnapshot, login, logout, sendCommand } from "../api/client"
-import { type Command, type CommandResponse, commandKindSchema, type Snapshot } from "../api/schema"
+import type { Command, CommandResponse, Snapshot } from "../api/schema"
 
 export type ConnectionState = "connecting" | "connected" | "stale" | "unauthorized"
 
@@ -8,6 +8,7 @@ export function useProduction() {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [connection, setConnection] = useState<ConnectionState>("connecting")
   const [error, setError] = useState<string | null>(null)
+  const [connectionError, setConnectionError] = useState<string | null>(null)
   const [pending, setPending] = useState<ReadonlySet<string>>(new Set())
   const cursor = useRef<string | null>(null)
 
@@ -17,7 +18,7 @@ export function useProduction() {
       cursor.current = next.cursor
       setSnapshot(next)
       setConnection("connected")
-      setError(null)
+      setConnectionError(null)
     } catch (caught) {
       if (caught instanceof ApiError && caught.status === 401) {
         setConnection("unauthorized")
@@ -25,7 +26,7 @@ export function useProduction() {
         return
       }
       if (caught instanceof ApiError) {
-        setError(caught.message)
+        setConnectionError(caught.message)
       }
       setConnection("stale")
     }
@@ -39,18 +40,26 @@ export function useProduction() {
     if (connection !== "connected" || cursor.current === null) return
     const events = new EventSource(`/api/v1/events?after=${encodeURIComponent(cursor.current)}`)
     const handleEvent = (): void => void refresh()
-    for (const kind of commandKindSchema.options) events.addEventListener(kind, handleEvent)
+    for (const kind of ["production.applied", "production.rejected", "production.failed"]) events.addEventListener(kind, handleEvent)
     events.addEventListener("plugin.external", handleEvent)
     events.addEventListener("gap", () => void refresh())
     events.onerror = () => {
       setConnection("stale")
       events.close()
+      void refresh()
     }
     return () => events.close()
   }, [connection, refresh])
 
+  useEffect(() => {
+    if (connection === "unauthorized" || connection === "connecting") return
+    const timer = window.setInterval(() => void refresh(), 2000)
+    return () => window.clearInterval(timer)
+  }, [connection, refresh])
+
   const authenticate = useCallback(async (password: string): Promise<void> => {
     setError(null)
+    setConnectionError(null)
     try {
       await login(password)
       await refresh()
@@ -83,7 +92,8 @@ export function useProduction() {
       return response
     } catch (caught) {
       if (caught instanceof ApiError) {
-        setError(caught.message)
+        if (caught.status === 0) { setConnectionError(caught.message); setConnection("stale") }
+        else setError(caught.message)
         if (caught.status === 401) setConnection("unauthorized")
         return null
       }
@@ -97,5 +107,5 @@ export function useProduction() {
     }
   }, [connection, refresh])
 
-  return { snapshot, connection, error, pending, authenticate, signOut, refresh, command }
+  return { snapshot, connection, error: connectionError ?? error, pending, authenticate, signOut, refresh, command }
 }

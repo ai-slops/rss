@@ -14,6 +14,8 @@ const MAXIMUM_BUFFER_MS: i64 = 5_000;
 impl OwnerState {
     pub(super) fn apply(&mut self, command: &CommandKind) -> EventKind {
         match command {
+            CommandKind::AddSource { source } => self.add_source(source),
+            CommandKind::ConfigureSource { source } => self.configure_source(source),
             CommandKind::ApplyAudioMix { routes } => self.apply_audio_mix(routes),
             CommandKind::ApplyTiming {
                 program_holdback,
@@ -28,9 +30,19 @@ impl OwnerState {
                 revision,
                 placements,
             } => self.prepare_preview(revision, placements),
+            CommandKind::PrepareComposition {
+                revision,
+                placements,
+            } => self.prepare_composition(revision, placements),
             CommandKind::QuerySnapshot => EventKind::Snapshot {
                 outputs: self.snapshot(),
             },
+            CommandKind::QueryRuntime => EventKind::RuntimeSnapshot {
+                sources: self.runtime_sources(),
+                program: crate::engine_telemetry::program_progress(&self.pipeline),
+            },
+            CommandKind::ReconnectSource { source_id } => self.reconnect_source(source_id),
+            CommandKind::RemoveSource { source_id } => self.remove_source(source_id),
             CommandKind::Shutdown => self.applied(false),
             CommandKind::StartOutput { output_id } => self.set_output(output_id, true),
             CommandKind::StopOutput { output_id } => self.set_output(output_id, false),
@@ -74,9 +86,22 @@ impl OwnerState {
         self.applied(false)
     }
 
-    fn applied(&self, discontinuity: bool) -> EventKind {
+    pub(super) fn applied(&self, discontinuity: bool) -> EventKind {
         EventKind::Applied {
             discontinuity,
+            media_at: None,
+            program_revision: self.program_revision.clone(),
+        }
+    }
+
+    pub(super) fn applied_media(
+        &self,
+        discontinuity: bool,
+        media_at: crate::protocol::Nanoseconds,
+    ) -> EventKind {
+        EventKind::Applied {
+            discontinuity,
+            media_at: Some(media_at),
             program_revision: self.program_revision.clone(),
         }
     }
@@ -128,15 +153,26 @@ impl OwnerState {
             let Ok(plan) = plan else {
                 return rejected_timing(plan);
             };
-            let Some(element) = self.pipeline.by_name(element_name) else {
+            let element = self.pipeline.by_name(element_name);
+            let control = self.timing_controls.get(&correction.track_id).cloned();
+            if element.is_none() && control.is_none() {
                 return EventKind::Failed {
                     reason: format!("pipeline has no timing element '{element_name}'"),
                 };
-            };
-            changes.push((element, to_nanoseconds(plan.video_delay())));
+            }
+            let delay = plan.video_delay();
+            changes.push((element, control, to_nanoseconds(delay)));
         }
-        for (element, offset) in changes {
-            element.set_property("timestamp-offset", offset);
+        for (element, control, offset) in changes {
+            if let Some(control) = control {
+                control.set_offset(offset);
+            } else if let Some(element) = element {
+                if element.find_property("ts-offset").is_some() {
+                    element.set_property("ts-offset", offset);
+                } else {
+                    element.set_property("timestamp-offset", offset);
+                }
+            }
         }
         self.applied(true)
     }
@@ -147,9 +183,9 @@ impl OwnerState {
         placements: &[ScenePlacement],
     ) -> EventKind {
         match apply_at_frame_boundary(&self.pipeline, "preview_compositor", placements) {
-            Ok(()) => {
+            Ok(media_at) => {
                 self.prepared = Some((revision.clone(), placements.to_vec()));
-                self.applied(false)
+                self.applied_media(false, media_at)
             }
             Err(reason) => EventKind::Failed { reason },
         }
@@ -166,9 +202,7 @@ impl OwnerState {
             };
         }
         let Some((prepared_revision, placements)) = self.prepared.as_ref() else {
-            return EventKind::Rejected {
-                reason: "no prepared Preview revision".to_owned(),
-            };
+            return self.take_prepared_composition(revision, expected_program_revision);
         };
         if prepared_revision != revision {
             return EventKind::Rejected {
@@ -176,9 +210,9 @@ impl OwnerState {
             };
         }
         match apply_at_frame_boundary(&self.pipeline, "program_compositor", placements) {
-            Ok(()) => {
+            Ok(media_at) => {
                 self.program_revision = Some(revision.clone());
-                self.applied(false)
+                self.applied_media(false, media_at)
             }
             Err(reason) => EventKind::Failed { reason },
         }

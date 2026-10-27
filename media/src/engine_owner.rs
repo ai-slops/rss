@@ -7,6 +7,8 @@ use gstreamer as gst;
 use uuid::Uuid;
 
 use crate::engine::{EngineConfig, EngineError, EngineRequest};
+use crate::engine_composition::CompositionLayerRuntime;
+use crate::engine_sources::SourceRuntime;
 use crate::protocol::{
     Command, CommandId, CommandKind, EngineEvent, EngineRunId, EventKind, Nanoseconds, OutputId,
     OutputObservedState, ProgramRevision, ScenePlacement, Sequence, TrackId,
@@ -26,9 +28,17 @@ pub struct OwnerState {
     pub outputs: HashMap<OutputId, OutputControl>,
     pub completed: HashMap<CommandId, EngineEvent>,
     pub prepared: Option<(ProgramRevision, Vec<ScenePlacement>)>,
+    pub prepared_composition: Option<(ProgramRevision, Vec<crate::protocol::CompositionPlacement>)>,
     pub program_revision: Option<ProgramRevision>,
+    pub preview_layers: Vec<CompositionLayerRuntime>,
+    pub program_layers: Vec<CompositionLayerRuntime>,
     pub tracks: HashMap<TrackId, String>,
+    pub track_history: HashMap<TrackId, String>,
+    pub timing_controls:
+        HashMap<TrackId, std::sync::Arc<crate::engine_source_progress::TimingControl>>,
+    pub video_tees: HashMap<TrackId, String>,
     pub audio_routes: HashMap<TrackId, String>,
+    pub sources: HashMap<crate::protocol::SourceId, SourceRuntime>,
 }
 
 pub fn owner_thread(
@@ -58,7 +68,12 @@ pub fn owner_thread(
 
 fn setup_owner(config: &EngineConfig) -> Result<OwnerState, EngineError> {
     gst::init().map_err(|error| EngineError::Gstreamer(error.to_string()))?;
-    let element = gst::parse::launch(&config.pipeline_description)
+    let engine_run_id = EngineRunId::new(&Uuid::now_v7().to_string())
+        .map_err(|error| EngineError::Gstreamer(error.to_string()))?;
+    let description = config
+        .pipeline_description
+        .replace("{engine_run_id}", engine_run_id.as_str());
+    let element = gst::parse::launch(&description)
         .map_err(|error| EngineError::Gstreamer(error.to_string()))?;
     let pipeline = element
         .downcast::<gst::Pipeline>()
@@ -66,8 +81,6 @@ fn setup_owner(config: &EngineConfig) -> Result<OwnerState, EngineError> {
     pipeline
         .set_state(gst::State::Playing)
         .map_err(|error| EngineError::Gstreamer(format!("start pipeline: {error:?}")))?;
-    let engine_run_id = EngineRunId::new(&Uuid::now_v7().to_string())
-        .map_err(|error| EngineError::Gstreamer(error.to_string()))?;
     let outputs = config
         .outputs
         .iter()
@@ -89,9 +102,16 @@ fn setup_owner(config: &EngineConfig) -> Result<OwnerState, EngineError> {
         outputs,
         completed: HashMap::new(),
         prepared: None,
+        prepared_composition: None,
         program_revision: None,
+        preview_layers: Vec::new(),
+        program_layers: Vec::new(),
         tracks: config.tracks.iter().cloned().collect(),
+        track_history: HashMap::new(),
+        timing_controls: HashMap::new(),
+        video_tees: HashMap::new(),
         audio_routes: config.audio_routes.iter().cloned().collect(),
+        sources: HashMap::new(),
     })
 }
 
@@ -135,7 +155,7 @@ fn stop_pipeline(pipeline: &gst::Pipeline) {
     let _ = pipeline.set_state(gst::State::Null);
 }
 
-fn now_nanoseconds() -> Nanoseconds {
+pub fn now_nanoseconds() -> Nanoseconds {
     let value = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |duration| {

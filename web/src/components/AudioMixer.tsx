@@ -1,7 +1,7 @@
 import { Ear, MicrophoneSlash, SpeakerHigh } from "@phosphor-icons/react"
 import type { CSSProperties } from "react"
 import type { CommandKind, Snapshot } from "../api/schema"
-import { Button, EmptyState, Panel, ScopeTag } from "./Primitives"
+import { Button, EmptyState, Panel, ScopeTag, StatusChip } from "./Primitives"
 
 type AudioMixerProps = {
   readonly snapshot: Snapshot
@@ -13,8 +13,8 @@ type AudioMixerProps = {
 
 type MeterStyle = CSSProperties & { readonly "--meter": string }
 
-function meterStyle(levelDb: number): MeterStyle {
-  return { "--meter": `${Math.max(0, Math.min(100, 100 + levelDb))}%` }
+function meterStyle(levelDb: number | null): MeterStyle {
+  return { "--meter": levelDb === null ? "0%" : `${Math.max(0, Math.min(100, 100 + levelDb))}%` }
 }
 
 export function AudioMixer({ snapshot, disabled, listeningTrackId, onListen, onCommand }: AudioMixerProps) {
@@ -29,7 +29,10 @@ export function AudioMixer({ snapshot, disabled, listeningTrackId, onListen, onC
           return (
             <section className={`mixer-strip ${route.clipping ? "is-clipping" : ""}`} key={route.trackId}>
               <header><strong>{track?.sourceName ?? "Unknown"}</strong><small>{track?.format ?? route.trackId}</small></header>
-              <div className="meter-pair"><span className="meter-bar" style={meterStyle(route.inputPeakDb)} /><span className="meter-bar" style={meterStyle(route.outputPeakDb)} /><span className="sr-only">Input {route.inputPeakDb} dB, output {route.outputPeakDb} dB</span></div>
+              <div className="meter-pair"><span role="img" aria-label={route.inputPeakDb === null ? "Input meter unavailable" : `Input ${route.inputPeakDb} dB`} className="meter-bar" style={meterStyle(route.inputPeakDb)} /><span role="img" aria-label={route.outputPeakDb === null ? "Post-fader meter unavailable" : `Output ${route.outputPeakDb} dB`} className="meter-bar" style={meterStyle(route.outputPeakDb)} /></div>
+              {route.inputPeakDb === null || route.outputPeakDb === null ? <small>Meter unavailable</small> : null}
+              <small>Post-fader level uses the native input peak and current gain.</small>
+              {route.clipping === true ? <StatusChip tone="warning">FULL-SCALE / CLIP RISK</StatusChip> : null}
               <input aria-label={`${track?.sourceName ?? "Track"} gain`} disabled={disabled || !route.routed} max="12" min="-60" onChange={(event) => onCommand("audio.set", route.trackId, { gainDb: event.currentTarget.valueAsNumber })} step="0.5" type="range" value={route.gainDb} />
               <output>{route.gainDb.toFixed(1)} dB</output>
               <Button disabled={disabled || !route.routed} icon={route.muted ? SpeakerHigh : MicrophoneSlash} onClick={() => onCommand("audio.set", route.trackId, { muted: !route.muted })} tone={route.muted ? "danger" : "neutral"}>{route.muted ? "Unmute" : "Mute"}</Button>

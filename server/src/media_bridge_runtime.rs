@@ -1,6 +1,6 @@
 use live_production_media::protocol::{
-    CommandKind, CompositionPlacement, EventKind, ProgramProgress, ProgramRevision, SourceId,
-    SourceSnapshot, SourceSpec,
+    CommandKind, CompositionPlacement, EngineClockMapping, EventKind, ProgramProgress,
+    ProgramRevision, SourceId, SourceSnapshot, SourceSpec,
 };
 
 use crate::{
@@ -17,14 +17,20 @@ pub(crate) struct CompositionRequest<'a> {
 }
 
 impl MediaBridge {
-    pub(crate) fn runtime_snapshot(&self) -> Result<(Vec<SourceSnapshot>, ProgramProgress)> {
+    pub(crate) fn runtime_snapshot(
+        &self,
+    ) -> Result<(Vec<SourceSnapshot>, ProgramProgress, EngineClockMapping)> {
         let event = self.execute_kind(
             &uuid::Uuid::new_v4().to_string(),
             self.engine_run_id(),
             CommandKind::QueryRuntime,
         )?;
         match event.kind {
-            EventKind::RuntimeSnapshot { sources, program } => Ok((sources, program)),
+            EventKind::RuntimeSnapshot {
+                sources,
+                program,
+                clock,
+            } => Ok((sources, program, clock)),
             EventKind::Rejected { reason } => Err(AppError::Conflict(reason)),
             EventKind::Failed { reason } => Err(AppError::Unavailable(reason)),
             EventKind::Accepted | EventKind::Applied { .. } | EventKind::Snapshot { .. } => Err(
@@ -87,13 +93,6 @@ impl MediaBridge {
     }
 
     pub(crate) fn take_composition(&self, request: CompositionRequest<'_>) -> Result<AppliedMedia> {
-        self.prepare_composition(&CompositionRequest {
-            command_id: &uuid::Uuid::new_v4().to_string(),
-            expected_engine_run_id: request.expected_engine_run_id,
-            revision: request.revision,
-            expected_program_revision: request.expected_program_revision,
-            placements: request.placements.clone(),
-        })?;
         applied_event(
             self.execute_kind(
                 request.command_id,

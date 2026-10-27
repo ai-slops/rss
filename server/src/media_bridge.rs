@@ -7,8 +7,11 @@ use live_production_media::{
 };
 
 use crate::error::{AppError, Result};
-use crate::model::AudioRoute;
 use num_traits::ToPrimitive;
+
+pub use crate::media_bridge_requests::{
+    AudioRequest, PrepareRequest, TakeRequest, TrackTimingRequest,
+};
 
 pub struct MediaBridge {
     engine: MediaEngine,
@@ -19,34 +22,6 @@ pub struct AppliedMedia {
     pub at_ns: Nanoseconds,
     pub discontinuity: bool,
     pub program_revision: Option<String>,
-}
-
-pub struct TakeRequest<'a> {
-    pub command_id: &'a str,
-    pub expected_engine_run_id: &'a str,
-    pub revision: &'a str,
-    pub expected_program_revision: Option<&'a str>,
-    pub placements: Vec<CompositionPlacement>,
-}
-
-pub struct PrepareRequest<'a> {
-    pub command_id: &'a str,
-    pub expected_engine_run_id: &'a str,
-    pub revision: &'a str,
-    pub placements: Vec<CompositionPlacement>,
-}
-
-pub struct TrackTimingRequest<'a> {
-    pub command_id: &'a str,
-    pub expected_engine_run_id: &'a str,
-    pub holdback_ms: i64,
-    pub corrections: Vec<(String, i64)>,
-}
-
-pub struct AudioRequest<'a> {
-    pub command_id: &'a str,
-    pub expected_engine_run_id: &'a str,
-    pub routes: &'a [AudioRoute],
 }
 
 impl MediaBridge {

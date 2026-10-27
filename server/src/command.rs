@@ -61,6 +61,8 @@ pub enum Action {
     OutputDelete(Empty),
     #[serde(rename = "plugin.command")]
     Plugin(PluginCommand),
+    #[serde(rename = "asset.upload")]
+    AssetUpload(AssetUpload),
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -131,9 +133,18 @@ pub struct StartOutput {
     pub confirm_public: bool,
 }
 #[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct PluginCommand {
     pub command: String,
     pub text: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AssetUpload {
+    pub name: String,
+    pub mime: String,
+    pub data_base64: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -148,4 +159,6 @@ pub struct Receipt {
     pub actual_revision: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reason: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub plugin_result: Option<serde_json::Value>,
 }

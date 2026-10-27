@@ -30,6 +30,14 @@ pub fn clock_mapping(pipeline: &gst::Pipeline) -> EngineClockMapping {
     }
 }
 
+pub fn media_time(pipeline: &gst::Pipeline) -> Nanoseconds {
+    Nanoseconds::new(
+        pipeline
+            .current_running_time()
+            .map_or(0, gst::ClockTime::nseconds),
+    )
+}
+
 fn sink_progress(pipeline: &gst::Pipeline, name: &str) -> (u64, Option<Nanoseconds>) {
     let Some(sink) = pipeline.by_name(name) else {
         return (0, None);

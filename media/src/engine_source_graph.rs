@@ -16,6 +16,7 @@ pub struct SourceNames {
     pub audio_playout: String,
     pub video_tee: String,
     pub audio_tee: String,
+    pub srt_listener: String,
 }
 
 impl SourceNames {
@@ -31,6 +32,7 @@ impl SourceNames {
             audio_playout: format!("source_{stem}_audio_playout"),
             video_tee: format!("source_{stem}_video_tee"),
             audio_tee: format!("source_{stem}_audio_tee"),
+            srt_listener: format!("source_{stem}_srt_listener"),
         }
     }
 }
@@ -83,7 +85,8 @@ pub fn source_description(
                 latency.value()
             );
             format!(
-                "srtsrc uri={} wait-for-connection=false ! tsparse ! tsdemux name=demux demux. ! queue ! h264parse ! avdec_h264 ! {video_tail} demux. ! queue ! aacparse ! avdec_aac ! {audio_tail}",
+                "srtsrc name={} uri={} authentication=true wait-for-connection=false keep-listening=true automatic-eos=false auto-reconnect=true ! tsparse ! tsdemux name=demux demux. ! queue ! h264parse ! avdec_h264 ! {video_tail} demux. ! queue ! aacparse ! avdec_aac ! {audio_tail}",
+                names.srt_listener,
                 quote(&uri)
             )
         }

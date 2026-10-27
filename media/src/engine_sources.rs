@@ -1,17 +1,46 @@
-use std::sync::Arc;
-
-use gstreamer::prelude::*;
+use std::{sync::Arc, time::Instant};
 
 use crate::engine_owner::{OwnerState, now_nanoseconds};
 use crate::engine_source_graph::validate_source;
 use crate::engine_source_runtime::SourceRuntime;
 use crate::protocol::{
-    ContinuityGeneration, EventKind, GapTimebase, Nanoseconds, SourceGap, SourceId, SourceSnapshot,
-    SourceSpec,
+    ContinuityGeneration, EventKind, GapTimebase, SourceGap, SourceId, SourceSnapshot, SourceSpec,
 };
 use crate::tap::TapChannels;
 
 impl OwnerState {
+    pub(super) fn shutdown_sources(&mut self) {
+        let source_ids: Vec<_> = self.sources.keys().cloned().collect();
+        for source_id in source_ids {
+            let Some(runtime) = self.sources.remove(&source_id) else {
+                continue;
+            };
+            self.unregister_source_tracks(&runtime);
+            let _ = runtime.detach(&self.pipeline);
+        }
+    }
+
+    pub(super) fn maintain_sources(&mut self) {
+        let now = Instant::now();
+        let failed_epochs: Vec<_> = self
+            .sources
+            .iter()
+            .filter_map(|(id, runtime)| runtime.maintain_epoch().err().map(|_| id.clone()))
+            .collect();
+        for source_id in failed_epochs {
+            self.recover_pending_source(&source_id);
+        }
+        let expired: Vec<_> = self
+            .sources
+            .iter()
+            .filter(|(_, runtime)| runtime.pending_admission_expired(now))
+            .map(|(id, _)| id.clone())
+            .collect();
+        for source_id in expired {
+            self.recover_pending_source(&source_id);
+        }
+    }
+
     pub(super) fn add_source(&mut self, spec: &SourceSpec) -> EventKind {
         if self.sources.contains_key(&spec.id) {
             return EventKind::Rejected {
@@ -83,12 +112,12 @@ impl OwnerState {
         let video_offset = previous.video_timing_control.offset();
         let audio_offset = previous.audio_timing_control.offset();
         self.unregister_source_tracks(&previous);
-        let generation = previous.generation.saturating_add(1);
+        let generation = previous.current_generation().saturating_add(1);
         let mut gaps = previous.gaps.clone();
         gaps.push(SourceGap {
             timebase: GapTimebase::EngineMedia,
             generation: ContinuityGeneration::new(generation),
-            started_at: media_time(&self.pipeline),
+            started_at: crate::engine_telemetry::media_time(&self.pipeline),
             ended_at: None,
         });
         if let Err(reason) = previous.detach(&self.pipeline) {
@@ -126,9 +155,42 @@ impl OwnerState {
         }
     }
 
+    fn recover_pending_source(&mut self, source_id: &SourceId) {
+        let Some(previous) = self.sources.remove(source_id) else {
+            return;
+        };
+        let spec = previous.spec.clone();
+        let generation = previous.recovery_generation();
+        let mut gaps = previous.gaps.clone();
+        if generation > previous.generation && gaps.last().is_none_or(|gap| gap.ended_at.is_some())
+        {
+            gaps.push(SourceGap {
+                timebase: GapTimebase::EngineMedia,
+                generation: ContinuityGeneration::new(generation),
+                started_at: crate::engine_telemetry::media_time(&self.pipeline),
+                ended_at: None,
+            });
+        }
+        let video_offset = previous.video_timing_control.offset();
+        let audio_offset = previous.audio_timing_control.offset();
+        self.unregister_source_tracks(&previous);
+        if previous.detach(&self.pipeline).is_err() {
+            return;
+        }
+        let Ok(runtime) =
+            SourceRuntime::build(&self.pipeline, &self.engine_run_id, spec, generation, gaps)
+        else {
+            return;
+        };
+        runtime.video_timing_control.set_offset(video_offset);
+        runtime.audio_timing_control.set_offset(audio_offset);
+        self.register_source_tracks(&runtime);
+        self.sources.insert(source_id.clone(), runtime);
+    }
+
     pub(super) fn runtime_sources(&mut self) -> Vec<SourceSnapshot> {
         let now = now_nanoseconds();
-        let media_now = media_time(&self.pipeline);
+        let media_now = crate::engine_telemetry::media_time(&self.pipeline);
         let mut snapshots: Vec<_> = self
             .sources
             .values_mut()
@@ -192,12 +254,4 @@ impl OwnerState {
             self.audio_routes.remove(track_id);
         }
     }
-}
-
-fn media_time(pipeline: &gstreamer::Pipeline) -> Nanoseconds {
-    Nanoseconds::new(
-        pipeline
-            .current_running_time()
-            .map_or(0, gstreamer::ClockTime::nseconds),
-    )
 }

@@ -3,7 +3,7 @@ use crate::{
     tap::TapChannels,
 };
 
-const MAXIMUM_HISTORY_NS: u64 = 5_000_000_000;
+const MAXIMUM_HISTORY_NS: u64 = 4_000_000_000;
 
 pub struct SourceNames {
     pub video_history: String,
@@ -43,7 +43,7 @@ pub fn source_description(
     let clean = TapChannels::clean(engine_run_id, &spec.video_track_id, &spec.audio_track_id);
     let source = TapChannels::source(engine_run_id, &spec.video_track_id, &spec.audio_track_id);
     let video_tail = format!(
-        "videoconvert ! videoscale ! video/x-raw,width=1280,height=720,framerate=30/1 ! identity name={} ! tee name=raw_video raw_video. ! queue max-size-buffers=2 leaky=downstream ! intervideosink channel={} sync=false async=false raw_video. ! queue name={} max-size-time={MAXIMUM_HISTORY_NS} ! identity name={} ! clocksync name={} sync=true ! tee name={} {}. ! queue max-size-buffers=2 leaky=downstream ! intervideosink channel={} sync=false async=false",
+        "videoconvert ! videoscale ! video/x-raw,format=I420,width=1280,height=720,framerate=30/1 ! identity name={} ! tee name=raw_video raw_video. ! queue max-size-buffers=2 leaky=downstream ! intervideosink channel={} sync=false async=false raw_video. ! queue name={} max-size-bytes=0 max-size-buffers=0 max-size-time={MAXIMUM_HISTORY_NS} ! identity name={} ! clocksync name={} sync=true ! tee name={} {}. ! queue max-size-buffers=2 leaky=downstream ! intervideosink channel={} sync=false async=false",
         names.video_ingest,
         quote(&clean.video),
         names.video_history,
@@ -54,7 +54,7 @@ pub fn source_description(
         quote(&source.video),
     );
     let audio_tail = format!(
-        "audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate=48000,channels=2 ! identity name={} ! tee name=raw_audio raw_audio. ! queue max-size-buffers=8 leaky=downstream ! interaudiosink channel={} sync=false async=false raw_audio. ! queue name={} max-size-time={MAXIMUM_HISTORY_NS} ! identity name={} ! clocksync name={} sync=true ! tee name={} {}. ! queue max-size-buffers=8 leaky=downstream ! interaudiosink channel={} sync=false async=false",
+        "audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate=48000,channels=2 ! identity name={} ! tee name=raw_audio raw_audio. ! queue max-size-buffers=8 leaky=downstream ! interaudiosink channel={} sync=false async=false raw_audio. ! queue name={} max-size-bytes=0 max-size-buffers=0 max-size-time={MAXIMUM_HISTORY_NS} ! identity name={} ! clocksync name={} sync=true ! tee name={} {}. ! queue max-size-buffers=8 leaky=downstream ! interaudiosink channel={} sync=false async=false",
         names.audio_ingest,
         quote(&clean.audio),
         names.audio_history,
@@ -73,12 +73,13 @@ pub fn source_description(
             pattern_name(*pattern)
         ),
         SourceKind::SrtListener {
+            bind_address,
             port,
             latency,
             passphrase,
         } => {
             let uri = format!(
-                "srt://:{port}?mode=listener&latency={}&passphrase={passphrase}&pbkeylen=16",
+                "srt://{bind_address}:{port}?mode=listener&latency={}&passphrase={passphrase}&pbkeylen=16",
                 latency.value()
             );
             format!(
@@ -98,10 +99,12 @@ pub fn validate_source(spec: &SourceSpec) -> Result<(), String> {
             Err("synthetic frequency must be between 20 and 20000 Hz".to_owned())
         }
         SourceKind::SrtListener {
+            bind_address,
             latency,
             passphrase,
             ..
-        } if latency.value() < 0
+        } if bind_address.parse::<std::net::IpAddr>().is_err()
+            || latency.value() < 0
             || !(10..=79).contains(&passphrase.len())
             || !passphrase
                 .bytes()
@@ -140,4 +143,34 @@ pub fn element_stem(value: &str) -> String {
 
 pub fn quote(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::protocol::{Milliseconds, SourceId};
+
+    #[test]
+    fn decoded_history_queues_have_explicit_time_only_bounds() -> anyhow::Result<()> {
+        let spec = SourceSpec {
+            id: SourceId::new("bounded-source")?,
+            video_track_id: crate::protocol::TrackId::new("bounded-video")?,
+            audio_track_id: crate::protocol::TrackId::new("bounded-audio")?,
+            kind: SourceKind::SrtListener {
+                bind_address: "127.0.0.1".to_owned(),
+                port: 9_000,
+                latency: Milliseconds::new(120),
+                passphrase: "boundedCredential42".to_owned(),
+            },
+        };
+        let description = source_description(
+            &spec,
+            &SourceNames::new("bounded"),
+            &EngineRunId::new("bounded-run")?,
+        );
+        assert_eq!(description.matches("max-size-bytes=0").count(), 2);
+        assert_eq!(description.matches("max-size-buffers=0").count(), 2);
+        assert_eq!(description.matches("max-size-time=4000000000").count(), 2);
+        Ok(())
+    }
 }

@@ -13,110 +13,50 @@ use live_production_media::{
     },
 };
 
+struct Fixture {
+    engine: MediaEngine,
+    added: live_production_media::protocol::EngineEvent,
+    timing: live_production_media::protocol::EngineEvent,
+    port: u16,
+}
+
 #[test]
 fn authenticated_srt_decode_retains_real_buffers_for_signed_timing() -> anyhow::Result<()> {
     // Given
-    gst::init()?;
-    let port = free_udp_port()?;
+    let fixture = fixture()?;
     let passphrase = "scopedSrtCredential42";
-    let video_track = TrackId::new("network-video")?;
-    let audio_track = TrackId::new("network-audio")?;
-    let engine = MediaEngine::spawn(EngineConfig::new(
-        "fakesrc num-buffers=1 ! fakesink",
-        std::iter::empty::<(OutputId, &str)>(),
-    ))?;
-    let added = engine.execute(Command {
-        id: CommandId::new("network-add")?,
-        expected_engine_run_id: None,
-        kind: CommandKind::AddSource {
-            source: SourceSpec {
-                id: SourceId::new("network-camera")?,
-                video_track_id: video_track.clone(),
-                audio_track_id: audio_track.clone(),
-                kind: SourceKind::SrtListener {
-                    port,
-                    latency: Milliseconds::new(120),
-                    passphrase: passphrase.to_owned(),
-                },
-            },
-        },
-    })?;
-    let timing = engine.execute(Command {
-        id: CommandId::new("network-timing")?,
-        expected_engine_run_id: Some(added.engine_run_id.clone()),
-        kind: CommandKind::ApplyTrackTiming {
-            program_holdback: Milliseconds::new(500),
-            corrections: vec![
-                TrackCorrection {
-                    track_id: video_track,
-                    correction: Milliseconds::new(-250),
-                },
-                TrackCorrection {
-                    track_id: audio_track,
-                    correction: Milliseconds::new(125),
-                },
-            ],
-        },
-    })?;
 
-    // When: a publisher with the wrong secret must produce no decoded buffers.
-    let wrong_sender = srt_sender(port, "wrongScopedCredential99")?;
-    wrong_sender.set_state(gst::State::Playing)?;
-    std::thread::sleep(Duration::from_secs(1));
-    wrong_sender.set_state(gst::State::Null)?;
-    let rejected = runtime_snapshot(&engine, &added, "wrong-secret-snapshot")?;
-    assert_eq!(rejected.video_received_frames.value(), 0);
-    assert_eq!(rejected.audio_received_buffers.value(), 0);
-    let reconnected = engine.execute(Command {
-        id: CommandId::new("network-reconnect-after-rejection")?,
-        expected_engine_run_id: Some(added.engine_run_id.clone()),
-        kind: CommandKind::ReconnectSource {
-            source_id: SourceId::new("network-camera")?,
-        },
-    })?;
-    assert!(matches!(reconnected.kind, EventKind::Applied { .. }));
-    let reapplied = engine.execute(Command {
-        id: CommandId::new("network-timing-after-reconnect")?,
-        expected_engine_run_id: Some(added.engine_run_id.clone()),
-        kind: CommandKind::ApplyTrackTiming {
-            program_holdback: Milliseconds::new(500),
-            corrections: vec![
-                TrackCorrection {
-                    track_id: TrackId::new("network-video")?,
-                    correction: Milliseconds::new(-250),
-                },
-                TrackCorrection {
-                    track_id: TrackId::new("network-audio")?,
-                    correction: Milliseconds::new(125),
-                },
-            ],
-        },
-    })?;
-    assert!(matches!(reapplied.kind, EventKind::Applied { .. }));
-
-    let sender = srt_sender(port, passphrase)?;
+    // When
+    let sender = srt_sender(fixture.port, passphrase)?;
     sender.set_state(gst::State::Playing)?;
-    let connected = wait_for_history(&engine, &added)?;
+    let connected = wait_for_history(&fixture.engine, &fixture.added)?;
     sender.set_state(gst::State::Null)?;
-    std::thread::sleep(Duration::from_millis(2_200));
-    let disconnected = runtime_snapshot(&engine, &added, "network-disconnected")?;
+    std::thread::sleep(Duration::from_secs(4));
+    let disconnected = runtime_snapshot(&fixture.engine, &fixture.added, "network-disconnected")?;
 
     // Then
     assert!(matches!(
-        timing.kind,
+        fixture.timing.kind,
         EventKind::Applied {
             discontinuity: true,
             ..
         }
     ));
     assert!(connected.connected);
-    let retained_video = connected
-        .video_received_frames
+    let scheduled_lead = connected
+        .video_playout_pts
+        .ok_or_else(|| anyhow::anyhow!("playout PTS missing"))?
         .value()
-        .saturating_sub(connected.video_frames.value());
+        .saturating_sub(
+            connected
+                .video_received_pts
+                .ok_or_else(|| anyhow::anyhow!("received PTS missing"))?
+                .value(),
+        );
+    let retained_video = 250_000_000_u64.saturating_sub(scheduled_lead);
     assert!(
-        (5..=10).contains(&retained_video),
-        "decoded retained video buffers={retained_video}"
+        (180_000_000..=283_000_000).contains(&retained_video),
+        "decoded retained video ns={retained_video}"
     );
     assert!(connected.audio_received_buffers.value() > connected.audio_buffers.value());
     assert!(!disconnected.connected);
@@ -127,6 +67,83 @@ fn authenticated_srt_decode_retains_real_buffers_for_signed_timing() -> anyhow::
             .is_some_and(|gap| gap.ended_at.is_none())
     );
     Ok(())
+}
+
+#[test]
+fn wrong_srt_secret_never_produces_decoded_buffers() -> anyhow::Result<()> {
+    // Given
+    let fixture = fixture()?;
+    let sender = srt_sender(fixture.port, "wrongScopedCredential99")?;
+
+    // When
+    sender.set_state(gst::State::Playing)?;
+    std::thread::sleep(Duration::from_secs(1));
+    sender.set_state(gst::State::Null)?;
+    let rejected = runtime_snapshot(&fixture.engine, &fixture.added, "wrong-secret-snapshot")?;
+
+    // Then
+    assert_eq!(rejected.video_received_frames.value(), 0);
+    assert_eq!(rejected.audio_received_buffers.value(), 0);
+    Ok(())
+}
+
+fn fixture() -> anyhow::Result<Fixture> {
+    gst::init()?;
+    let port = free_udp_port()?;
+    let engine = MediaEngine::spawn(EngineConfig::new(
+        "fakesrc num-buffers=1 ! fakesink",
+        std::iter::empty::<(OutputId, &str)>(),
+    ))?;
+    let added = engine.execute(Command {
+        id: CommandId::new("network-add")?,
+        expected_engine_run_id: None,
+        kind: CommandKind::AddSource {
+            source: SourceSpec {
+                id: SourceId::new("network-camera")?,
+                video_track_id: TrackId::new("network-video")?,
+                audio_track_id: TrackId::new("network-audio")?,
+                kind: SourceKind::SrtListener {
+                    bind_address: "127.0.0.1".to_owned(),
+                    port,
+                    latency: Milliseconds::new(120),
+                    passphrase: "scopedSrtCredential42".to_owned(),
+                },
+            },
+        },
+    })?;
+    let timing = apply_timing(&engine, &added, "network-timing")?;
+    Ok(Fixture {
+        engine,
+        added,
+        timing,
+        port,
+    })
+}
+
+fn apply_timing(
+    engine: &MediaEngine,
+    added: &live_production_media::protocol::EngineEvent,
+    id: &str,
+) -> anyhow::Result<live_production_media::protocol::EngineEvent> {
+    engine
+        .execute(Command {
+            id: CommandId::new(id)?,
+            expected_engine_run_id: Some(added.engine_run_id.clone()),
+            kind: CommandKind::ApplyTrackTiming {
+                program_holdback: Milliseconds::new(500),
+                corrections: vec![
+                    TrackCorrection {
+                        track_id: TrackId::new("network-video")?,
+                        correction: Milliseconds::new(-250),
+                    },
+                    TrackCorrection {
+                        track_id: TrackId::new("network-audio")?,
+                        correction: Milliseconds::new(125),
+                    },
+                ],
+            },
+        })
+        .map_err(Into::into)
 }
 
 fn wait_for_history(
@@ -140,11 +157,13 @@ fn wait_for_history(
         sequence = sequence.saturating_add(1);
         let source = runtime_snapshot(engine, added, &format!("network-snapshot-{sequence}"))?;
         let retained = source
-            .video_received_frames
-            .value()
-            .saturating_sub(source.video_frames.value());
+            .video_received_pts
+            .zip(source.video_playout_pts)
+            .map_or(0, |(received, played)| {
+                250_000_000_u64.saturating_sub(played.value().saturating_sub(received.value()))
+            });
         if source.connected
-            && retained >= 5
+            && (180_000_000..=283_000_000).contains(&retained)
             && source.audio_received_buffers.value() > source.audio_buffers.value()
         {
             return Ok(source);

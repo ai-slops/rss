@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use gst::prelude::*;
 use gstreamer as gst;
-use live_production_media::output::{MediaTap, OutputId, OutputManager, OutputState};
+use live_production_media::output::{MediaTap, OutputId, OutputManager};
 
 pub fn producer(tap: &MediaTap) -> anyhow::Result<gst::Pipeline> {
     let description = format!(
@@ -14,24 +14,6 @@ pub fn producer(tap: &MediaTap) -> anyhow::Result<gst::Pipeline> {
     gst::parse::launch(&description)?
         .downcast::<gst::Pipeline>()
         .map_err(|_| anyhow::anyhow!("producer description did not create a pipeline"))
-}
-
-pub fn wait_for_state(
-    manager: &OutputManager,
-    id: &OutputId,
-    state: OutputState,
-) -> anyhow::Result<()> {
-    let deadline = Instant::now() + Duration::from_secs(15);
-    while Instant::now() < deadline {
-        if manager.snapshot(id)?.actual == state {
-            return Ok(());
-        }
-        std::thread::sleep(Duration::from_millis(25));
-    }
-    anyhow::bail!(
-        "output did not reach {state:?}: {:?}",
-        manager.snapshot(id)?
-    )
 }
 
 pub fn wait_for_media(manager: &OutputManager, id: &OutputId) -> anyhow::Result<()> {

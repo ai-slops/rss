@@ -1,3 +1,4 @@
+mod output_state_support;
 mod output_support;
 
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -9,7 +10,8 @@ use live_production_media::output::{
     RecordingDefinition,
 };
 use live_production_media::protocol::{EngineClockMapping, EngineRunId, Nanoseconds};
-use output_support::{producer, wait_for_media, wait_for_state};
+use output_state_support::wait_for_state;
+use output_support::{producer, wait_for_media};
 
 #[test]
 fn recording_owner_finalizes_decodable_bounded_segments() -> anyhow::Result<()> {

@@ -1,11 +1,13 @@
 import { mkdir, writeFile } from "node:fs/promises"
 import { chromium } from "../web/node_modules/playwright/index.mjs"
 import { ensureSupervised } from './runner-supervision.mjs'
+import { peerStats, videoColors, waitForPrivateAudio } from './browser-media-evidence.mjs'
+import { exerciseOperatorControls } from './browser-operator-evidence.mjs'
 await ensureSupervised()
 
 const baseUrl = process.env.LIVE_PRODUCTION_URL ?? "http://127.0.0.1:3001"
 const password = process.env.LIVE_PRODUCTION_PASSWORD ?? "test-operator-password"
-const evidenceDirectory = new URL("../.tools/browser-evidence/", import.meta.url)
+const evidenceDirectory = new URL(`${process.env.BROWSER_EVIDENCE_DIR ?? "../.tools/browser-evidence"}/`, import.meta.url)
 const browserRoot = new URL("../.tools/browser-root/", import.meta.url).pathname
 await mkdir(evidenceDirectory, { recursive: true })
 
@@ -18,11 +20,12 @@ const browser = await chromium.launch({
     XDG_DATA_DIRS: `${browserRoot}usr/share`,
   },
   headless: true,
-  args: ["--no-sandbox", "--disable-dev-shm-usage", "--disable-gpu", "--autoplay-policy=no-user-gesture-required", "--use-fake-ui-for-media-stream", "--use-fake-device-for-media-stream", "--force-webrtc-ip-handling-policy=default", "--disable-features=WebRtcHideLocalIpsWithMdns,LocalNetworkAccessChecksWebRTC"],
+  args: ["--no-sandbox", "--disable-dev-shm-usage"],
 })
+let page
 try {
-const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, permissions: ["camera", "microphone"] })
-const page = await context.newPage()
+const context = await browser.newContext({ viewport: { width: 1280, height: 900 } })
+page = await context.newPage()
 const browserErrors = []
 const commandResponses = []
 page.on("console", (message) => {
@@ -50,11 +53,14 @@ await page.getByRole("button", { name: "Open control room" }).click()
 await page.getByRole("main").filter({ has: page.getByText("Untitled production") }).waitFor()
 const initialSnapshot = await page.evaluate(async () => (await fetch("/api/v1/snapshot")).json())
 await page.getByRole("button", { name: "setup" }).click()
-await page.getByRole("button", { name: "Add synthetic input" }).click()
-await page.getByText("Synthetic bars").waitFor({ timeout: 15_000 })
-await page.getByRole("button", { name: "Add video" }).click()
+await page.getByLabel("Input type").selectOption("synthetic")
+await page.getByLabel("Source name").fill("Synthetic bars")
+await page.getByRole("button", { name: "Create input", exact: true }).click()
+await page.getByRole("article").filter({ has: page.getByText("Synthetic bars", { exact: true }) }).waitFor({ timeout: 15_000 })
+await page.getByRole("button", { name: "Add video to Preview", exact: true }).click()
 await page.getByRole("tab", { name: "Layers" }).click()
 await page.getByText("Synthetic bars").last().waitFor({ timeout: 15_000 })
+const operatorControls = await exerciseOperatorControls(page)
 try {
   await page.getByText(/decoded frames/).first().waitFor({ timeout: 30_000 })
 } catch (error) {
@@ -94,6 +100,8 @@ try {
   await page.screenshot({ path: new URL("preview-progress-failure.png", evidenceDirectory).pathname, fullPage: true })
   throw error
 }
+const beforeTakeColors = await videoColors(page)
+if (!beforeTakeColors.some(video => video.stream?.startsWith("preview") && video.range > 90)) throw new Error("Preview did not display the selected synthetic source pixels")
 await page.getByRole("button", { name: "TAKE EXACT REVISION" }).click()
 await page.getByText("MATCHES PROGRAM").waitFor({ timeout: 15_000 })
 try {
@@ -129,33 +137,16 @@ const initialMedia = await page.locator("video").evaluateAll((videos) => videos.
 })))
 
 await page.getByRole("button", { name: "setup" }).click()
-await page.getByRole("button", { name: "Listen" }).click()
+await page.getByRole("button", { name: "Listen before mix", exact: true }).click()
 await page.getByRole("button", { name: "Enable browser monitoring" }).click()
 await page.waitForFunction(() => {
   const audio = document.querySelector("audio")
   return audio !== null && audio.srcObject instanceof MediaStream && audio.srcObject.getAudioTracks().length === 1 && !audio.muted
 }, null, { timeout: 30_000 })
+await waitForPrivateAudio(page)
 
-const stats = await page.evaluate(async () => {
-  const peerConnections = globalThis.__liveProductionPeerConnections ?? []
-  const reports = []
-  for (const peerConnection of peerConnections) {
-    const values = []
-    for (const report of (await peerConnection.getStats()).values()) {
-      if (report.type === "inbound-rtp") {
-        values.push({
-          kind: report.kind,
-          bytesReceived: report.bytesReceived,
-          packetsReceived: report.packetsReceived,
-          framesDecoded: report.framesDecoded,
-          jitter: report.jitter,
-        })
-      }
-    }
-    reports.push({ connectionState: peerConnection.connectionState, iceConnectionState: peerConnection.iceConnectionState, inbound: values })
-  }
-  return reports
-})
+const stats = await peerStats(page)
+await writeFile(new URL("peer-stats.json", evidenceDirectory), `${JSON.stringify(stats, null, 2)}\n`)
 const afterListenSnapshot = await page.evaluate(async () => (await fetch("/api/v1/snapshot")).json())
 if (JSON.stringify(initialSnapshot.project.audioRoutes) !== JSON.stringify(afterListenSnapshot.project.audioRoutes)) {
   throw new Error("Private Listen changed the server audio mix")
@@ -163,8 +154,8 @@ if (JSON.stringify(initialSnapshot.project.audioRoutes) !== JSON.stringify(after
 if (!stats.some((entry) => entry.inbound.some((report) => report.kind === "video" && report.framesDecoded > 10))) {
   throw new Error("No WebRTC peer decoded changing video frames")
 }
-if (!stats.some((entry) => entry.inbound.some((report) => report.kind === "audio" && report.packetsReceived > 0))) {
-  throw new Error("No WebRTC peer received audio packets")
+if (!stats.some((entry) => entry.privateSource && entry.inbound.some((report) => report.kind === "audio" && report.packetsReceived > 3))) {
+  throw new Error("The selected private-source peer did not receive audio packets")
 }
 
 await page.screenshot({ path: new URL("desktop.png", evidenceDirectory).pathname, fullPage: true })
@@ -189,9 +180,20 @@ const evidence = {
   programRevisionBeforeClose: appliedRevision,
   programRevisionAfterClose: afterCloseSnapshot.program.programRevision,
   privateListenPreservedAudioMix: true,
+  beforeTakeColors,
+  operatorControls,
 }
 await writeFile(new URL("media-stats.json", evidenceDirectory), `${JSON.stringify(evidence, null, 2)}\n`)
 console.log(JSON.stringify(evidence, null, 2))
+} catch (error) {
+  if (page !== undefined && !page.isClosed()) {
+    await page.screenshot({ path: new URL("workflow-failure.png", evidenceDirectory).pathname, fullPage: true })
+    await writeFile(new URL("workflow-failure.json", evidenceDirectory), JSON.stringify({
+      text: await page.locator("main").innerText(),
+      media: await page.locator("video").evaluateAll(videos => videos.map(video => ({ readyState: video.readyState, frames: video.getVideoPlaybackQuality().totalVideoFrames }))),
+    }, null, 2))
+  }
+  throw error
 } finally {
   await browser.close()
 }

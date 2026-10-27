@@ -1,5 +1,5 @@
 [workspace]
-members = ["server", "media"]
+members = ["server", "media", "supervisor"]
 resolver = "3"
 
 [workspace.package]

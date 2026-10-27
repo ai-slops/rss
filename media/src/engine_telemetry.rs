@@ -1,7 +1,10 @@
 use gst::prelude::*;
 use gstreamer as gst;
 
-use crate::protocol::{FrameCount, Nanoseconds, ProgramProgress};
+use crate::{
+    engine_owner::now_nanoseconds,
+    protocol::{EngineClockMapping, FrameCount, Nanoseconds, ProgramProgress},
+};
 
 pub fn program_progress(pipeline: &gst::Pipeline) -> ProgramProgress {
     let (video_frames, last_video_at) = sink_progress(pipeline, "program_video_tap");
@@ -11,6 +14,19 @@ pub fn program_progress(pipeline: &gst::Pipeline) -> ProgramProgress {
         audio_buffers: FrameCount::new(audio_buffers),
         last_video_at,
         last_audio_at,
+    }
+}
+
+pub fn clock_mapping(pipeline: &gst::Pipeline) -> EngineClockMapping {
+    let before = now_nanoseconds().value();
+    let media_time = pipeline
+        .current_running_time()
+        .map_or(0, gst::ClockTime::nseconds);
+    let after = now_nanoseconds().value();
+    EngineClockMapping {
+        media_time: Nanoseconds::new(media_time),
+        wall_time: Nanoseconds::new(before.saturating_add(after.saturating_sub(before) / 2)),
+        uncertainty: Nanoseconds::new(after.saturating_sub(before) / 2),
     }
 }
 

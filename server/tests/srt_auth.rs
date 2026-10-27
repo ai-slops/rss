@@ -11,6 +11,11 @@ async fn srt_publish_credential_requires_authenticated_provisioning() {
     let harness = Harness::new();
     let cookie = harness.login().await;
     let initial = harness.snapshot(&cookie).await;
+    let port = std::net::UdpSocket::bind("127.0.0.1:0")
+        .expect("isolated UDP reservation")
+        .local_addr()
+        .expect("isolated UDP address")
+        .port();
     let created = harness
         .command(
             &cookie,
@@ -18,7 +23,7 @@ async fn srt_publish_credential_requires_authenticated_provisioning() {
                 "id": "secure-srt-source", "kind": "source.create",
                 "targetId": initial["project"]["id"],
                 "expectedEngineRunId": initial["engineRunId"],
-                "payload": {"name": "Secure SRT", "adapter": {"kind": "srt", "port": 19000, "bufferMs": 120}}
+                "payload": {"name": "Secure SRT", "adapter": {"kind": "srt", "port": port, "bufferMs": 120}}
             }),
         )
         .await;
@@ -56,4 +61,7 @@ async fn srt_publish_credential_requires_authenticated_provisioning() {
     assert!(passphrase.len() >= 32);
     assert!(!passphrase.contains(source_id));
     assert!(!snapshot.to_string().contains(passphrase));
+    let stream_id = live_production_media::engine_source_admission::publisher_stream_id(passphrase);
+    assert_eq!(body["streamId"], stream_id);
+    assert!(!snapshot.to_string().contains(&stream_id));
 }

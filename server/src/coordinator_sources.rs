@@ -39,6 +39,7 @@ impl Owner {
             "port": *port,
             "bufferMs": *buffer_ms,
             "passphrase": passphrase,
+            "streamId": live_production_media::engine_source_admission::publisher_stream_id(&passphrase),
             "pbkeylen": 16
         }))
     }
@@ -137,6 +138,10 @@ fn apply_track_status(
     track: &mut TrackSnapshot,
     status: &live_production_media::protocol::SourceSnapshot,
 ) {
+    track.drift = match track.kind {
+        TrackKind::Video => status.video_drift.clone(),
+        TrackKind::Audio => status.audio_drift.clone(),
+    };
     track.connection = if status.connected {
         "connected"
     } else {

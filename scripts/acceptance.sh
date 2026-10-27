@@ -9,6 +9,7 @@ REPORT="$ROOT/var/acceptance/latest.txt"
 exec > >(tee "$REPORT") 2>&1
 printf 'Live Production acceptance — %s\n' "$(date -u +%FT%TZ)"
 printf 'Commit: %s\n' "$(GIT_MASTER=1 git rev-parse HEAD)"
+node scripts/size-check.mjs
 cargo fmt --all -- --check
 cargo clippy --locked --workspace --all-targets -- -D warnings
 cargo test --locked --workspace

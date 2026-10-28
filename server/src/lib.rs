@@ -22,6 +22,7 @@ mod media_bridge_layout;
 mod media_bridge_pipeline;
 mod media_bridge_requests;
 mod media_bridge_runtime;
+mod media_network;
 mod media_signalling_policy;
 pub mod model;
 pub mod observation;

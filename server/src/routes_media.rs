@@ -17,7 +17,7 @@ use crate::{
     routes::AppState,
 };
 
-const MAXIMUM_MEDIA_CLIENTS: usize = 6;
+pub(crate) const MAXIMUM_MEDIA_CLIENTS: usize = 6;
 
 struct MediaLease {
     media: MediaState,
@@ -89,10 +89,24 @@ impl MediaState {
             _ => Err(AppError::Invalid("Unknown media stream.".into())),
         }
     }
+
+    fn network_capability(&self) -> crate::media_network::MediaNetworkCapability {
+        crate::media_network::MediaNetworkCapability::from_outputs(self.outputs.as_deref())
+    }
 }
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/media/{stream}/ws", get(media_socket))
+    Router::new()
+        .route("/media/network-capabilities", get(network_capabilities))
+        .route("/media/{stream}/ws", get(media_socket))
+}
+
+async fn network_capabilities(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+) -> Result<axum::Json<crate::media_network::MediaNetworkCapability>> {
+    state.authorize(&headers).await?;
+    Ok(axum::Json(state.media.network_capability()))
 }
 
 async fn media_socket(

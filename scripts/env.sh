@@ -7,6 +7,17 @@ else
 fi
 
 LIVE_PRODUCTION_ROOT=$(CDPATH= cd -- "$(dirname -- "$_live_production_env_source")/.." && pwd)
+if [ "${LIVE_PRODUCTION_NATIVE:-0}" = 1 ]; then
+  # Explicit native-host verification, never an implicit Alpine fallback.
+  if [ -n "${PKG_CONFIG_SYSROOT_DIR:-}${LIVE_PRODUCTION_SYSROOT:-}" ]; then
+    printf '%s\n' 'Native verification refuses an inherited sysroot.' >&2
+    return 1 2>/dev/null || exit 1
+  fi
+  export LIVE_PRODUCTION_ROOT
+  export RUST_LOG="${RUST_LOG:-info},gst_plugin_webrtc_signalling=warn"
+  unset _live_production_env_source
+  return 0 2>/dev/null || exit 0
+fi
 LIVE_PRODUCTION_SYSROOT=$LIVE_PRODUCTION_ROOT/.tools/sysroot
 
 if [ ! -x "$LIVE_PRODUCTION_SYSROOT/usr/bin/rustc" ]; then

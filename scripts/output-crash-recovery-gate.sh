@@ -92,28 +92,27 @@ command "{\"id\":\"crash-output-start\",\"kind\":\"output.start\",\"targetId\":\
 
 attempt=0
 while :; do
-  raw_count=$(find "$OUTPUT_DIR/state/recordings" -name 'segment-*.mkv' -type f 2>/dev/null | wc -l)
-  closed_count=$(python3 - "$OUTPUT_DIR/state/recordings" <<'PY'
-import json,pathlib,sys
-catalogs=list(pathlib.Path(sys.argv[1]).glob("*/*/catalog.json"))
-count=0
-for path in catalogs:
-    try: count += len(json.loads(path.read_text()))
-    except (OSError,ValueError,TypeError): pass
-print(count)
-PY
-)
-  if [ "$raw_count" -ge 3 ] && [ "$closed_count" -ge 2 ]; then break; fi
+  first_fragment=$(find "$OUTPUT_DIR/state/recordings" -name 'segment-00000.mkv' -type f -print 2>/dev/null | sed -n '1p')
+  if [ -n "$first_fragment" ]; then break; fi
   attempt=$((attempt + 1))
   if [ "$attempt" -ge 180 ]; then
-    printf '%s\n' "recorder did not publish three raw and two closed fragments" >&2
+    printf '%s\n' "recorder did not create its first raw fragment" >&2
     exit 1
   fi
   sleep 0.1
 done
-cp "$(find "$OUTPUT_DIR/state/recordings" -name catalog.json -type f | sed -n '1p')" \
-  "$OUTPUT_DIR/catalog-before-kill.json"
-kill -STOP "$app_pid"
+session_dir=$(dirname "$first_fragment")
+node --input-type=module - "$PROJECT_ROOT" "$session_dir" "$app_pid" <<'JS'
+import { pathToFileURL } from "node:url"
+const [root, directory, rawPid] = process.argv.slice(2)
+const { stopOnFragmentCreation } = await import(pathToFileURL(`${root}/scripts/target/harness/workflow-crash.mjs`))
+await stopOnFragmentCreation({
+  directory,
+  fragmentName: "segment-00003.mkv",
+  timeoutMs: 10_000,
+  stop: () => process.kill(Number.parseInt(rawPid, 10), "SIGSTOP"),
+})
+JS
 app_stopped=true
 attempt=0
 while ! grep -q '^State:[[:space:]]*T' "/proc/$app_pid/status" 2>/dev/null; do
@@ -124,6 +123,24 @@ while ! grep -q '^State:[[:space:]]*T' "/proc/$app_pid/status" 2>/dev/null; do
   fi
   sleep 0.05
 done
+raw_count=$(find "$OUTPUT_DIR/state/recordings" -name 'segment-*.mkv' -type f | wc -l)
+closed_count=$(python3 - "$OUTPUT_DIR/state/recordings" <<'PY'
+import json,pathlib,sys
+catalogs=list(pathlib.Path(sys.argv[1]).glob("*/*/catalog.json"))
+entries=[]
+for path in catalogs:
+    try: entries.extend(json.loads(path.read_text()))
+    except (OSError,ValueError,TypeError): pass
+assert not any(pathlib.Path(item["path"]).name == "segment-00003.mkv" for item in entries), entries
+print(len(entries))
+PY
+)
+if [ "$raw_count" -lt 4 ] || [ "$closed_count" -lt 2 ]; then
+  printf '%s\n' "recorder did not preserve four raw and two closed fragments before kill" >&2
+  exit 1
+fi
+cp "$(find "$OUTPUT_DIR/state/recordings" -name catalog.json -type f | sed -n '1p')" \
+  "$OUTPUT_DIR/catalog-before-kill.json"
 find "$OUTPUT_DIR/state/recordings" -name 'segment-*.mkv' -type f -print0 \
   | sort -z | xargs -0 sha256sum >"$OUTPUT_DIR/before.sha256"
 

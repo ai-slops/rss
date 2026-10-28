@@ -1,6 +1,8 @@
-.tools/
+.tools
 target/
-node_modules/
+!scripts/target/
+!scripts/target/**
+node_modules
 web/dist/
 var/
 .env

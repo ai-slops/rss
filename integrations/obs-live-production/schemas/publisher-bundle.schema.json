@@ -1,0 +1,48 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Live Production OBS Publisher Bundle",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "target", "obs", "encoding"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceId", "videoTrackId", "audioTrackId", "host", "port", "passphrase", "streamId", "bufferMs"],
+      "properties": {
+        "sourceId": {"type": "string", "minLength": 1},
+        "videoTrackId": {"type": "string", "minLength": 1},
+        "audioTrackId": {"type": "string", "minLength": 1},
+        "host": {"type": "string", "minLength": 1},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "passphrase": {"type": "string", "minLength": 10, "maxLength": 79},
+        "streamId": {"type": "string", "minLength": 1},
+        "bufferMs": {"type": "integer", "minimum": 1}
+      }
+    },
+    "obs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceName", "audioMixIndex"],
+      "properties": {
+        "sourceName": {"type": "string", "minLength": 1},
+        "sourceUuid": {"type": "string", "minLength": 1},
+        "audioMixIndex": {"type": "integer", "minimum": 0, "maximum": 5}
+      }
+    },
+    "encoding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height", "fpsNumerator", "fpsDenominator", "audioSampleRate", "videoBitrateKbps"],
+      "properties": {
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1},
+        "fpsNumerator": {"type": "integer", "minimum": 1},
+        "fpsDenominator": {"type": "integer", "minimum": 1},
+        "audioSampleRate": {"const": 48000},
+        "videoBitrateKbps": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

@@ -4,6 +4,8 @@ use gstreamer::{self as gst, prelude::*};
 use thiserror::Error;
 
 use crate::{
+    preview_ice,
+    preview_network::{PreviewNetworkCapability, PreviewNetworkConfig, PreviewNetworkError},
     protocol::{EngineRunId, TrackId},
     tap::TapChannels,
 };
@@ -14,6 +16,9 @@ pub struct PreviewOutputs {
     engine_run_id: EngineRunId,
     preview_port: u16,
     program_port: u16,
+    network_config: PreviewNetworkConfig,
+    network_capability: PreviewNetworkCapability,
+    plugin_version: String,
     pipelines: Vec<gst::Pipeline>,
     source_pipelines: Mutex<HashMap<TrackId, SourceMonitor>>,
 }
@@ -29,20 +34,33 @@ impl PreviewOutputs {
     ///
     /// # Errors
     /// Returns an error when `GStreamer` cannot construct or start a producer.
-    pub fn spawn(engine_run_id: &EngineRunId) -> Result<Self, PreviewError> {
+    pub fn spawn(
+        engine_run_id: &EngineRunId,
+        network: &PreviewNetworkConfig,
+    ) -> Result<Self, PreviewError> {
         gst::init().map_err(|error| PreviewError::Gstreamer(error.to_string()))?;
         let preview_port = allocate_local_port()?;
-        let preview = start_pipeline(&video_pipeline(engine_run_id, "preview", preview_port))?;
+        let preview = start_pipeline(
+            &video_pipeline(engine_run_id, "preview", preview_port),
+            network,
+        )?;
         let program_port = allocate_local_port()?;
         let pipelines = vec![
             preview,
-            start_pipeline(&program_pipeline(engine_run_id, program_port))?,
+            start_pipeline(&program_pipeline(engine_run_id, program_port), network)?,
         ];
+        let plugin_version = gst::Registry::get().find_plugin("rswebrtc").map_or_else(
+            || "unavailable".to_owned(),
+            |plugin| plugin.version().to_string(),
+        );
 
         Ok(Self {
             engine_run_id: engine_run_id.clone(),
             preview_port,
             program_port,
+            network_config: network.clone(),
+            network_capability: network.capability(),
+            plugin_version,
             pipelines,
             source_pipelines: Mutex::new(HashMap::with_capacity(SOURCE_AUDIO_SLOTS)),
         })
@@ -56,6 +74,16 @@ impl PreviewOutputs {
     #[must_use]
     pub const fn program_port(&self) -> u16 {
         self.program_port
+    }
+
+    #[must_use]
+    pub fn network_capability(&self) -> PreviewNetworkCapability {
+        self.network_capability.clone()
+    }
+
+    #[must_use]
+    pub fn plugin_version(&self) -> &str {
+        &self.plugin_version
     }
 
     /// Returns a bounded private source-monitor producer for the requested track.
@@ -77,7 +105,10 @@ impl PreviewOutputs {
             return Err(PreviewError::SourceBudgetFull);
         }
         let port = allocate_local_port()?;
-        let pipeline = start_pipeline(&audio_pipeline(&self.engine_run_id, &track_id, port))?;
+        let pipeline = start_pipeline(
+            &audio_pipeline(&self.engine_run_id, &track_id, port),
+            &self.network_config,
+        )?;
         sources.insert(
             track_id,
             SourceMonitor {
@@ -134,6 +165,8 @@ pub enum PreviewError {
     InvalidTrack(String),
     #[error("Cannot allocate a localhost signaling port: {0}")]
     SignallingPort(#[from] std::io::Error),
+    #[error(transparent)]
+    Network(#[from] PreviewNetworkError),
 }
 
 fn allocate_local_port() -> Result<u16, std::io::Error> {
@@ -141,7 +174,10 @@ fn allocate_local_port() -> Result<u16, std::io::Error> {
         .and_then(|listener| listener.local_addr().map(|address| address.port()))
 }
 
-fn start_pipeline(description: &str) -> Result<gst::Pipeline, PreviewError> {
+fn start_pipeline(
+    description: &str,
+    network: &PreviewNetworkConfig,
+) -> Result<gst::Pipeline, PreviewError> {
     let element = gst::parse::launch(description)
         .map_err(|error| PreviewError::Gstreamer(error.to_string()))?;
     let pipeline = element
@@ -152,10 +188,7 @@ fn start_pipeline(description: &str) -> Result<gst::Pipeline, PreviewError> {
             .factory()
             .is_some_and(|factory| factory.name() == "webrtcsink")
         {
-            element.set_property(
-                "stun-server",
-                std::env::var("LIVE_PRODUCTION_STUN_SERVER").ok(),
-            );
+            preview_ice::configure_sink(&element, network)?;
         }
     }
     pipeline

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { mkdtemp } from 'node:fs/promises';
+import { mkdtemp, readFile } from 'node:fs/promises';
 import { once } from 'node:events';
 import { createInterface } from 'node:readline';
 import { ensureSupervised } from './runner-supervision.mjs';
@@ -31,9 +31,17 @@ test('repeated native smoke outcomes return live and obsolete executables to bas
     try {
       const [line] = await Promise.race([once(lines, 'line'), exited.then(() => { throw new Error(`Native fixture exited before readiness: ${state}`); })]);
       const descriptor = JSON.parse(line);
+      const appStartTicks = await startTicks(descriptor.appPid);
+      const ownerLossReaped = mode === 'owner-loss' ? Promise.race([
+        once(lines, 'line').then(([acknowledgement]) => JSON.parse(acknowledgement)),
+        once(lines, 'close').then(() => { throw new Error('Owner-loss fixture closed before reporting its native child reaped'); }),
+      ]) : null;
       if (signal !== null) child.kill(signal);
       const [code] = await exited;
       assert.equal(code, expected, `native ${mode}/${signal ?? 'none'} did not preserve the outcome`);
+      if (ownerLossReaped !== null) {
+        assert.deepEqual(await ownerLossReaped, { ownerLoss: 'reaped', appPid: descriptor.appPid, appStartTicks });
+      }
       const deadline = Date.now() + 5000;
       while (JSON.stringify(identities(await nativeInstances())) !== JSON.stringify(identities(baseline)) && Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 50));
@@ -50,3 +58,8 @@ test('repeated native smoke outcomes return live and obsolete executables to bas
   }
   console.info(JSON.stringify({ runs: cases.length, nativeBefore: baseline.length, nativeAfter: (await nativeInstances()).length }));
 });
+
+async function startTicks(pid) {
+  const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
+  return stat.slice(stat.lastIndexOf(') ') + 2).trim().split(/\s+/)[19];
+}

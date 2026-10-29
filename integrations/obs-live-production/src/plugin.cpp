@@ -22,6 +22,7 @@ void frontend_event(obs_frontend_event event, void *) {
       blog(LOG_ERROR, "[obs-live-production] fixture start failed: %s",
            error.c_str());
   } else if (event == OBS_FRONTEND_EVENT_EXIT) {
+    frontend.shutdown();
     controller.stop();
   }
 }
@@ -45,7 +46,7 @@ bool obs_module_load(void) {
 }
 
 void obs_module_unload(void) {
+  obs_frontend_remove_event_callback(frontend_event, nullptr);
   frontend.shutdown();
   controller.stop();
-  obs_frontend_remove_event_callback(frontend_event, nullptr);
 }

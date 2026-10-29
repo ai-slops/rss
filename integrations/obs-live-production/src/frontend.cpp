@@ -35,26 +35,14 @@ QString text(const char *key) {
   return QString::fromUtf8(obs_module_text(key));
 }
 
-bool active_state(const std::string &state) {
-  return state == "starting" || state == "sending" ||
-         state == "reconnecting" || state == "stopping";
-}
-
 QString display_state(const std::string &state) {
-  if (state == "ready")
-    return text("State.Ready");
-  if (state == "starting")
-    return text("State.Starting");
-  if (state == "sending")
-    return text("State.Sending");
-  if (state == "reconnecting")
-    return text("State.Reconnecting");
-  if (state == "stopping")
-    return text("State.Stopping");
-  if (state == "stopped")
-    return text("State.Stopped");
-  if (state == "failed")
-    return text("State.Failed");
+  if (state == "ready") return text("State.Ready");
+  if (state == "starting") return text("State.Starting");
+  if (state == "sending") return text("State.Sending");
+  if (state == "reconnecting") return text("State.Reconnecting");
+  if (state == "stopping") return text("State.Stopping");
+  if (state == "stopped") return text("State.Stopped");
+  if (state == "failed") return text("State.Failed");
   return text("State.Unconfigured");
 }
 
@@ -74,6 +62,19 @@ bool resolve_source(const PublisherConfig &config, QString &name,
     return true;
   error = "configured OBS source has no display name";
   return false;
+}
+
+bool validate_audio(std::string &error) {
+  obs_audio_info info {};
+  if (!obs_get_audio_info(&info)) {
+    error = "OBS audio is not initialized";
+    return false;
+  }
+  if (info.samples_per_sec != 48000 || info.speakers != SPEAKERS_STEREO) {
+    error = "OBS audio must be configured for 48 kHz stereo";
+    return false;
+  }
+  return true;
 }
 
 }
@@ -157,7 +158,8 @@ public:
     state_value_->setText(display_state(state));
     const std::string error = publisher_ ? publisher_->last_error() : load_error_;
     error_value_->setText(QString::fromStdString(error));
-    const bool active = active_state(state);
+    const bool active = state == "starting" || state == "sending" ||
+                        state == "reconnecting" || state == "stopping";
     select_button_->setEnabled(!active);
     confirm_->setEnabled(config_.has_value() && !active);
     start_button_->setEnabled(config_.has_value() && confirm_->isChecked() &&
@@ -176,7 +178,8 @@ private:
     std::string error;
     QString actual_source;
     if (!load_publisher_config(path.toStdString(), candidate, error) ||
-        !resolve_source(candidate, actual_source, error)) {
+        !resolve_source(candidate, actual_source, error) ||
+        !validate_audio(error)) {
       publisher_.reset();
       config_.reset();
       load_error_ = std::move(error);
@@ -209,6 +212,13 @@ private:
   void start_publisher() {
     if (!config_ || !confirm_->isChecked())
       return;
+    std::string error;
+    if (!validate_audio(error)) {
+      publisher_.reset();
+      load_error_ = std::move(error);
+      refresh();
+      return;
+    }
     if (!publisher_ || publisher_->state() == "failed") {
       const std::string instance = "manual-" + std::to_string(++instance_id_);
       QPointer<PublisherDialog> guard(this);
@@ -224,13 +234,11 @@ private:
                 },
                 Qt::QueuedConnection);
           });
-      std::string error;
       if (!publisher_->initialize(error)) {
         refresh();
         return;
       }
     }
-    std::string error;
     publisher_->start(error);
     refresh();
   }
@@ -269,6 +277,8 @@ bool FrontendController::install() {
       obs_frontend_add_tools_menu_qaction(obs_module_text("Tools.Menu")));
   if (!action_)
     return false;
+  QObject::connect(action_, &QObject::destroyed,
+                   [this] { action_ = nullptr; });
   QObject::connect(action_, &QAction::triggered, [this] { show_dialog(); });
   return true;
 }
@@ -276,8 +286,9 @@ bool FrontendController::install() {
 void FrontendController::shutdown() {
   dialog_.reset();
   if (action_) {
-    delete action_;
+    QAction *action = action_;
     action_ = nullptr;
+    delete action;
   }
 }
 

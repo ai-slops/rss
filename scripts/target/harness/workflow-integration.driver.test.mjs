@@ -78,7 +78,7 @@ async function startSyntheticSender(processes, options, directory, declaration, 
   const color = declaration.color === "red" ? 4_294_901_760 : 4_278_190_335
   const uri = `srt://127.0.0.1:${endpoint.port}?mode=caller&passphrase=${endpoint.passphrase}&pbkeylen=16&streamid=${endpoint.streamId}`
   const pipeline = [
-    "-q", "-e", "mpegtsmux", "name=mux", "!", "srtsink", `uri=${uri}`, "wait-for-connection=false", "auto-reconnect=true",
+    "-q", "-e", "mpegtsmux", "name=mux", "alignment=7", "!", "srtsink", `uri=${uri}`, "wait-for-connection=false", "auto-reconnect=true",
     "videotestsrc", "is-live=true", "pattern=solid-color", `foreground-color=${color}`, "!",
     "video/x-raw,width=1280,height=720,framerate=30/1", "!", "timeoverlay", "!",
     "x264enc", "tune=zerolatency", "key-int-max=30", "bitrate=2500", "!", "h264parse", "config-interval=-1", "!", "mux.",

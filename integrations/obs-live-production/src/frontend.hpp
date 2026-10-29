@@ -7,10 +7,11 @@ class QAction;
 namespace live_production {
 
 class PublisherDialog;
+class ModuleRuntime;
 
 class FrontendController {
 public:
-  FrontendController();
+  explicit FrontendController(ModuleRuntime &runtime);
   ~FrontendController();
 
   FrontendController(const FrontendController &) = delete;
@@ -24,6 +25,7 @@ private:
 
   QAction *action_ = nullptr;
   std::unique_ptr<PublisherDialog> dialog_;
+  ModuleRuntime &runtime_;
 };
 
 }

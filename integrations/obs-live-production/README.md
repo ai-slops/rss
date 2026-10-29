@@ -34,6 +34,36 @@ stream ID in its report or explicit log messages.
 The bundle's `bufferMs` is converted to FFmpeg's microsecond SRT `latency`
 query value. For example, `120` becomes `latency=120000`.
 
+Create a bundle for one input that already exists on the Live Production
+server with the repository CLI. Keep the operator password in an owner-only
+regular file; do not put it in the command line, URL, OBS profile or bundle.
+The output path must not exist.
+
+```sh
+chmod 600 /secure/live-production/operator-password
+node scripts/target/publisher-bundle.mjs \
+  --server-url https://control.example.com/api/v1 \
+  --password-file /secure/live-production/operator-password \
+  --source-id 8d2f7b71-existing-source-id \
+  --obs-source-name "Camera Scene" \
+  --audio-mix-index 0 \
+  --target-host ingest-host-visible-from-obs.example.com \
+  --output /secure/obs/camera.publisher.json
+```
+
+Use the exact source ID from the server's authoritative snapshot. The command
+does not create or select an input by name. It authenticates, verifies that the
+requested persisted source is SRT, resolves its observed video/audio track IDs,
+requests that source's scoped publishing endpoint, and writes one mode-`0600`
+bundle. Its stdout is a credential-free JSON summary.
+
+For a remote server, `--server-url` must use HTTPS and `--target-host` is
+required. `--target-host` is the SRT host or IP reachable from the OBS machine;
+it is not inferred from an HTTPS proxy. Loopback HTTP is accepted for a local
+server, where omitting `--target-host` uses the loopback control hostname.
+Encoding defaults are 1280x720, 30/1 fps and 2500 kbit/s; see `--help` for the
+explicit override flags.
+
 ## Rehearsal fixture contract
 
 `LIVE_PRODUCTION_OBS_FIXTURE_FILE` points to a private mode-`0600` JSON file:
@@ -109,8 +139,9 @@ The native Qt dialog uses OBS system styling and owns one independent
 
 Operator workflow:
 
-1. Provision one input on the Live Production server and save its private
-   publisher bundle as a regular mode-`0600` file.
+1. Provision one input on the Live Production server, then run the command in
+   **Publisher bundle** above for that existing source ID. Keep the generated
+   file private and do not print or copy its contents into reports.
 2. In OBS, create or select the video source or scene named by the bundle and
    route the intended stereo audio to the bundle's OBS mix index.
 3. Open **Tools → Live Production SRT Publisher** and select the bundle. The

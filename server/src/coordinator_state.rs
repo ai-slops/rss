@@ -26,6 +26,8 @@ impl Owner {
         let store = Store::open(&database).map_err(AppError::Internal)?;
         let plugins =
             crate::plugins::PluginRegistry::trusted(&store).map_err(AppError::Internal)?;
+        let recovery = crate::source_recovery::SourceRecoveryManager::load(&store)
+            .map_err(AppError::Internal)?;
         let project = store.load().map_err(AppError::Internal)?;
         for source in &project.sources {
             let credential = store
@@ -110,6 +112,7 @@ impl Owner {
             state_directory,
             events,
             plugins,
+            recovery,
         })
     }
 

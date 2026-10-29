@@ -126,6 +126,20 @@ impl Store {
         body.map(|json| serde_json::from_str(&json).context("parse plugin value"))
             .transpose()
     }
+
+    pub fn plugin_list(&self, namespace: &str) -> anyhow::Result<Vec<(String, serde_json::Value)>> {
+        let mut query = self
+            .db
+            .prepare("SELECT key,body FROM plugin_storage WHERE namespace=?1 ORDER BY key")?;
+        let rows = query.query_map([namespace], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        rows.map(|row| {
+            let (key, body) = row?;
+            Ok((key, serde_json::from_str(&body)?))
+        })
+        .collect()
+    }
 }
 
 #[cfg(test)]

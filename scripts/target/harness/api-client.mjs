@@ -27,6 +27,32 @@ export class ApiClient {
     return this.#json(`/sources/${encodeURIComponent(sourceId)}/publishing-endpoint`)
   }
 
+  async recoveryStatus(sourceId) {
+    return this.#json(`/sources/${encodeURIComponent(sourceId)}/recovery`)
+  }
+
+  async updateRecovery(sourceId, policy) {
+    return this.#json(`/sources/${encodeURIComponent(sourceId)}/recovery`, { method: "PUT", body: policy })
+  }
+
+  async enrollRecovery(sourceId, rotate) {
+    return this.#json(`/sources/${encodeURIComponent(sourceId)}/recovery/enroll`, { method: "POST", body: { rotate } })
+  }
+
+  async revokeRecovery(sourceId) {
+    return this.#json(`/sources/${encodeURIComponent(sourceId)}/recovery/controller`, { method: "DELETE" })
+  }
+
+  async retryRecovery(sourceId, requestId = randomUUID()) {
+    return this.#json(`/sources/${encodeURIComponent(sourceId)}/recovery/retry`, { method: "POST", body: { requestId } })
+  }
+
+  async pollRecovery(sourceId, controllerToken, body) {
+    return this.#json(`/source-recovery/${encodeURIComponent(sourceId)}/poll`, {
+      method: "POST", body, authenticated: false, bearer: controllerToken, mutationHeader: false,
+    })
+  }
+
   async command(kind, targetId, payload, options = {}) {
     const snapshot = options.snapshot ?? await this.snapshot()
     const body = {
@@ -52,7 +78,10 @@ export class ApiClient {
   async #request(path, options = {}) {
     const headers = new Headers({ accept: "application/json" })
     if (options.body !== undefined) headers.set("content-type", "application/json")
-    if (options.method !== undefined && options.method !== "GET") headers.set("x-live-production", "1")
+    if (options.method !== undefined && options.method !== "GET" && options.mutationHeader !== false) {
+      headers.set("x-live-production", "1")
+    }
+    if (options.bearer !== undefined) headers.set("authorization", `Bearer ${options.bearer}`)
     if (options.authenticated !== false) {
       if (this.#cookie === null) throw new Error("Authenticated API request attempted before login")
       headers.set("cookie", this.#cookie)

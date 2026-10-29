@@ -66,3 +66,18 @@ Controlled acceptance is not an external production certification. The internal 
 ## External gates not supplied
 
 Real OBS/plugin source separation, a target laptop's remote ICE path, platform account auto-start semantics/private test broadcast, hardware encoder performance and intended editor import are unverified until those exact systems are exercised. Controlled software fixtures cannot establish these integrations.
+
+## Native follow-up diagnostics, 2026-10-29
+
+The retained Ubuntu verifier tested exact primary follow-up
+`1c8d8adffb8d1c48f8b7c2cc39e38e7009f1d7a0` with unchanged product/test blobs.
+**Acceptance remains failed**: clean provenance has no video interval, both plain
+owner-loss lifecycle runs fail ESRCH, and the primary SRT profile remains 0x0 /
+strict-decode exit 69. Both preserved MKVs decode, but all 154 decoded frames have
+luma 16 and the recording video consumer logs generated black frames. The memory
+diagnostic reports distinct parentless objects (`same_layout=false`), not a basis
+for heuristic provenance restoration. One read-only observed lifecycle run
+passes and records a short-lived zombie; it does not override the two plain
+failures. Native build/Clippy and OBS compile/CTest pass, not genuine OBS media.
+The same VM is stopped. Full raw artifacts remain private in `var/followup/`;
+see [the exact source mapping, evidence and root handoff](ubuntu-followup-verification-2026-10-29.md).

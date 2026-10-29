@@ -17,7 +17,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   libgstreamer-plugins-bad1.0-dev libssl-dev qt6-base-dev \
   gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
   gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav \
-  gstreamer1.0-nice ffmpeg obs-studio libobs-dev cmake xvfb xauth mesa-utils
+  gstreamer1.0-nice gstreamer1.0-x ffmpeg obs-studio libobs-dev cmake xvfb xauth mesa-utils
 umask 077
 CACHE="$HOME/.cache/live-production"
 DEST="$ROOT/.tools/ubuntu"

@@ -6,7 +6,7 @@ import { writePrivateJson } from "./private-files.mjs"
 const REQUIRED_GST = [
   "compositor", "audiomixer", "splitmuxsink", "x264enc", "voaacenc",
   "srtsrc", "rtmpsink", "matroskamux", "mpegtsmux", "h264parse", "aacparse",
-  "avdec_h264", "avdec_aac", "webrtcsink", "nicesrc",
+  "avdec_h264", "avdec_aac", "webrtcsink", "nicesrc", "timeoverlay",
 ]
 
 export async function runPreflight({ pluginDirectory, reportPath, serverBinary, supervisorBinary, obsBinary }) {

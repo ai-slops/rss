@@ -62,8 +62,9 @@ bool Publisher::initialize(std::string &error) {
   if (!obs_get_video_info(&info))
     return fail("OBS video is not initialized");
   obs_audio_info audio_info {};
-  if (!obs_get_audio_info(&audio_info) || audio_info.samples_per_sec != 48000)
-    return fail("OBS audio must be configured for 48 kHz");
+  if (!obs_get_audio_info(&audio_info) || audio_info.samples_per_sec != 48000 ||
+      audio_info.speakers != SPEAKERS_STEREO)
+    return fail("OBS audio must be configured for 48 kHz stereo");
   info.base_width = config_.encoding.width;
   info.base_height = config_.encoding.height;
   info.output_width = config_.encoding.width;

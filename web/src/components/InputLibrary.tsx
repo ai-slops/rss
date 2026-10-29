@@ -7,6 +7,7 @@ import type { NewSourcePayload } from "./InputLibraryForms"
 import { ConfigureSourceForm, CreateSourceForm } from "./InputLibraryForms"
 import { Button, EmptyState, StatusChip } from "./Primitives"
 import type { OperatorCommand, OperatorCommandReceipt } from "./ProductionSetup"
+import { SourceRecoveryControls } from "./SourceRecoveryControls"
 
 type Source = Snapshot["project"]["sources"][number]
 
@@ -81,6 +82,7 @@ export function InputLibrary({ snapshot, disabled, listeningTrackId, onListen, o
             {expandedSourceId === source.id ? <ConfigureSourceForm disabled={disabled} key={`${source.id}-${source.adapter.kind}`} onSubmit={(payload) => execute({ kind: "source.configure", targetId: source.id, payload: { source: buildSourceConfiguration(source, payload) }, revision: snapshot.project.revision })} source={source} /> : null}
             {publishing?.sourceId === source.id ? <div className="production-setup__credentials"><strong>Scoped SRT publishing credentials</strong><p>Keep these values private. They authorize only this input.</p><dl><div><dt>Listener</dt><dd><code>{publishing.bindAddress}:{publishing.port}</code></dd></div><div><dt>Latency</dt><dd>{publishing.bufferMs} ms</dd></div><div><dt>Stream ID</dt><dd><code>{publishing.streamId}</code></dd></div><div><dt>Passphrase</dt><dd><code>{publishing.passphrase}</code></dd></div><div><dt>PB key length</dt><dd>{publishing.pbkeylen}</dd></div></dl></div> : null}
             {publishingError === null ? null : <p className="production-setup__error" role="alert">{publishingError}</p>}
+            {source.adapter.kind === "srt" ? <SourceRecoveryControls disabled={disabled} sourceId={source.id} /> : null}
           </article>
         ))}
       </section>

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -32,11 +33,19 @@ struct EncodingConfig {
   uint32_t video_bitrate_kbps = 0;
 };
 
+struct RecoveryConfig {
+  uint32_t schema_version = 0;
+  std::string control_url;
+  std::string controller_id;
+  std::string controller_token;
+};
+
 struct PublisherConfig {
   uint32_t schema_version = 0;
   TargetConfig target;
   ObsConfig obs;
   EncodingConfig encoding;
+  std::optional<RecoveryConfig> recovery;
 };
 
 struct FixtureConfig {

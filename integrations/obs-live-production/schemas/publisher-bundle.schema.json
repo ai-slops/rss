@@ -43,6 +43,17 @@
         "audioSampleRate": {"const": 48000},
         "videoBitrateKbps": {"type": "integer", "minimum": 1}
       }
+    },
+    "recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "controlUrl", "controllerId", "controllerToken"],
+      "properties": {
+        "schemaVersion": {"const": 1},
+        "controlUrl": {"type": "string", "minLength": 1},
+        "controllerId": {"type": "string", "minLength": 1},
+        "controllerToken": {"type": "string", "minLength": 16}
+      }
     }
   }
 }

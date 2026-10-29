@@ -4,6 +4,7 @@
 
 #include <limits>
 #include <sys/stat.h>
+#include <utility>
 
 namespace live_production {
 namespace {
@@ -28,6 +29,24 @@ bool require_text(const std::string &value, const char *field,
     return true;
   error = std::string("missing required field: ") + field;
   return false;
+}
+
+bool valid_recovery_url(const std::string &url, const std::string &source_id) {
+  const std::string path = "/api/v1/source-recovery/" + source_id + "/poll";
+  const size_t scheme = url.find("://");
+  if (scheme == std::string::npos || url.find_first_of("?#", scheme + 3) != std::string::npos)
+    return false;
+  const std::string protocol = url.substr(0, scheme);
+  const size_t path_start = url.find('/', scheme + 3);
+  if (path_start == std::string::npos || url.substr(path_start) != path)
+    return false;
+  const std::string authority = url.substr(scheme + 3, path_start - scheme - 3);
+  if (authority.empty() || authority.find('@') != std::string::npos)
+    return false;
+  const bool loopback = authority == "localhost" || authority.rfind("localhost:", 0) == 0 ||
+                        authority == "127.0.0.1" || authority.rfind("127.0.0.1:", 0) == 0 ||
+                        authority == "[::1]" || authority.rfind("[::1]:", 0) == 0;
+  return protocol == "https" || (protocol == "http" && loopback);
 }
 
 }
@@ -62,9 +81,12 @@ bool load_publisher_config(const std::string &path, PublisherConfig &config,
   obs_data_t *target = obs_data_get_obj(root, "target");
   obs_data_t *obs = obs_data_get_obj(root, "obs");
   obs_data_t *encoding = obs_data_get_obj(root, "encoding");
+  obs_data_t *recovery = obs_data_get_obj(root, "recovery");
   const auto release_data = [&] {
     if (encoding)
       obs_data_release(encoding);
+    if (recovery)
+      obs_data_release(recovery);
     if (obs)
       obs_data_release(obs);
     if (target)
@@ -85,6 +107,16 @@ bool load_publisher_config(const std::string &path, PublisherConfig &config,
   config.target.stream_id = text(target, "streamId");
   config.obs.source_name = text(obs, "sourceName");
   config.obs.source_uuid = text(obs, "sourceUuid");
+  if (recovery) {
+    RecoveryConfig value;
+    value.schema_version = static_cast<uint32_t>(obs_data_get_int(recovery, "schemaVersion"));
+    value.control_url = text(recovery, "controlUrl");
+    value.controller_id = text(recovery, "controllerId");
+    value.controller_token = text(recovery, "controllerToken");
+    config.recovery = std::move(value);
+  } else {
+    config.recovery.reset();
+  }
 
   uint32_t port = 0;
   const long long mix = obs_data_get_int(obs, "audioMixIndex");
@@ -119,6 +151,14 @@ bool load_publisher_config(const std::string &path, PublisherConfig &config,
       !require_text(config.target.passphrase, "target.passphrase", error) ||
       !require_text(config.target.stream_id, "target.streamId", error) ||
       !require_text(config.obs.source_name, "obs.sourceName", error)) {
+    release_data();
+    return false;
+  }
+  if (config.recovery &&
+      (config.recovery->schema_version != 1 || config.recovery->controller_id.empty() ||
+       config.recovery->controller_token.size() < 16 ||
+       !valid_recovery_url(config.recovery->control_url, config.target.source_id))) {
+    error = "publisher bundle has invalid source recovery enrollment";
     release_data();
     return false;
   }

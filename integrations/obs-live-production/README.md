@@ -64,6 +64,128 @@ server, where omitting `--target-host` uses the loopback control hostname.
 Encoding defaults are 1280x720, 30/1 fps and 2500 kbit/s; see `--help` for the
 explicit override flags.
 
+### Optional source recovery enrollment
+
+Recovery is never enrolled implicitly. Add `--with-recovery` to the same bundle
+command only after recovery policy for that existing SRT source is available:
+
+```sh
+node scripts/target/publisher-bundle.mjs \
+  --server-url https://control.example.com/api/v1 \
+  --password-file /secure/live-production/operator-password \
+  --source-id 8d2f7b71-existing-source-id \
+  --obs-source-name "Camera Scene" \
+  --audio-mix-index 0 \
+  --target-host ingest-host-visible-from-obs.example.com \
+  --output /secure/obs/camera-with-recovery.publisher.json \
+  --with-recovery
+```
+
+The operator cookie is used only by this enrollment command. The bundle receives
+one source-specific controller ID/token and a control URL constructed from the
+validated server origin plus the server's exact relative path for that same
+source. The CLI rejects redirects, absolute response URLs, another source's
+path, and generic command paths. The operator password/cookie is never copied
+into the bundle or passed to OBS.
+
+An existing enrollment is not silently replaced. To intentionally invalidate
+the old source controller token and issue a new one, choose a new output path
+and use both flags:
+
+```sh
+node scripts/target/publisher-bundle.mjs ... \
+  --output /secure/obs/camera-rotated.publisher.json \
+  --with-recovery --rotate-recovery
+```
+
+`--rotate-recovery` without `--with-recovery` is rejected. Loading a recovery
+bundle does not start publishing. Manual **Start publisher** must establish a
+fresh running intent for the current OBS process; manual Stop and OBS exit
+disarm recovery.
+
+### Recovery acceptance entrypoints
+
+The portable local driver uses a fake source controller and real supervised
+GStreamer SRT sender/receiver. It proves controller fencing and decoded A/V, but
+is explicitly not OBS evidence:
+
+```sh
+source scripts/env.sh
+LIVE_PRODUCTION_RECOVERY_DRIVER=1 \
+LIVE_PRODUCTION_RECOVERY_ROOT="$PWD" \
+LIVE_PRODUCTION_RECOVERY_SUPERVISOR="$PWD/target/debug/live-production-supervisor" \
+node --test scripts/target/recovery-local.driver.test.mjs
+```
+
+When the recovery backend is built locally, a second driver exercises the real
+operator/controller HTTP routes and native receiver counters without starting
+outputs or changing Program:
+
+```sh
+source scripts/env.sh
+LIVE_PRODUCTION_RECOVERY_HTTP_DRIVER=1 \
+LIVE_PRODUCTION_RECOVERY_ROOT="$PWD" \
+LIVE_PRODUCTION_RECOVERY_SUPERVISOR="$PWD/target/debug/live-production-supervisor" \
+LIVE_PRODUCTION_RECOVERY_SERVER="$PWD/target/debug/live-production" \
+LIVE_PRODUCTION_RECOVERY_WEB_DIST="$PWD/web/dist" \
+node --test scripts/target/recovery-http.driver.test.mjs
+```
+
+This remains non-OBS evidence. The real-server driver destroys and recreates a
+supervised synthetic SRT sender through an explicitly authorized loopback bridge
+handover. It requires a new continuity generation, two strict video/audio/PTS
+observations, and decoded red-motion/440 Hz stereo recordings. It does not claim
+OBS Publisher recreation. A newer manual stopped intent cancels the next queued
+restart. Actual OBS destruction/recreation belongs to the native fixture below.
+
+Native preparation writes a private finite fault file for drop, freeze, manual
+Stop, authorization, backoff, reconnect, duplicate delivery, server restart,
+maintenance, source-disable and offline-lease cases:
+
+```sh
+scripts/target/recovery-native.sh \
+  --supervisor-binary "$PWD/target/release/live-production-supervisor" \
+  --server-binary "$PWD/target/release/live-production" \
+  --web-dist "$PWD/web/dist" \
+  --plugin-dir "$PWD/integrations/obs-live-production/package" \
+  --obs-binary /usr/bin/obs \
+  --xvfb-binary /usr/bin/Xvfb \
+  --evidence-dir "$PWD/var/recovery-native-$(date +%s)" \
+  --deadline-seconds 300
+```
+
+The entrypoint starts an isolated server, creates one loopback SRT input,
+enables recovery using the freshly observed policy revision, enrolls a one-time source controller, writes the
+private publisher bundle/fault/command files, and supervises Xvfb and OBS. Each
+strictly increasing private command is acknowledged through the plugin report's
+`executedCommand*` fields. The harness independently verifies backend HTTP
+evidence, receiver counters/PTS, restart execution count, manual Stop fencing,
+authorization, backoff, duplicate delivery, server restart, maintenance,
+source-disable and lease behavior.
+
+For online media freezes, the harness places an owned loopback-only UDP bridge
+between the OBS bundle port and the real server SRT port. It forwards SRT
+control datagrams in both directions while selectively dropping only DATA
+datagrams from the single fixture peer. No payload is decoded or logged by the
+bridge. Publisher recreation requires an explicit one-shot handover: only a new
+control handshake is accepted, it receives a distinct loopback server-facing
+socket, old DATA is rejected, and the old control route is retained until the
+harness observes the new decoded continuity generation and retires it.
+Maintenance and source-disable cases must reach a real stalled/disabled
+receiver condition with the controller online and no additional recovery action.
+Whole-process `SIGSTOP` remains a separate offline boundary. Queued Stop proof
+uses the plugin's private action-dispatch pause/resume hooks and requires a
+nonempty pending recovery command ID before Stop, then no execution after the
+dispatcher resumes.
+
+The entrypoint validates the plugin-owned `RECOVERY.md` and implementation for
+`commandFile`, `restartExecutionCount`, and command acknowledgments before
+launch. Missing local OBS/Xvfb/Qt/plugin staging is reported as a native
+prerequisite failure, not as a missing recovery contract. A native pass requires
+actual OBS source events plus advancing decoded receiver video and audio after
+publisher recreation; HTTP 200, output start, or a declared expected result is
+insufficient.
+
 ## Rehearsal fixture contract
 
 `LIVE_PRODUCTION_OBS_FIXTURE_FILE` points to a private mode-`0600` JSON file:
@@ -156,10 +278,12 @@ Operator workflow:
    running so it can be reopened from Tools; closing OBS stops plugin-owned
    publishing.
 
-The selected path and bundle contents are held only in plugin memory. They are
-not saved in an OBS profile, scene collection, plugin settings file or report,
-and the plugin does not log the path, target host, port, passphrase or stream
-ID. Nothing auto-starts after OBS restart or profile load. When
+Ordinary bundles and their selected path are held only in plugin memory. Opt-in
+recovery additionally persists the bundle path and nonsecret intent/epoch state
+in a separate private module state directory; scoped credentials remain only in
+the private bundle. Credentials are not saved in an OBS profile, scene collection,
+or report, and the plugin does not log the path, target host, port, passphrase or
+stream ID. Nothing auto-starts after OBS restart or profile load. When
 `LIVE_PRODUCTION_OBS_FIXTURE_FILE` is set, the Tools action is intentionally
 not installed, preventing manual publishers from colliding with the automated
 fixture.

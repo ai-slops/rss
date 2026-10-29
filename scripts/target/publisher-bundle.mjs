@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { constants } from "node:fs"
-import { lstat, open } from "node:fs/promises"
+import { lstat, open, unlink } from "node:fs/promises"
 import { isIP } from "node:net"
 import { dirname, resolve } from "node:path"
 import { ApiClient } from "./harness/api-client.mjs"
@@ -27,7 +27,10 @@ async function main(argv) {
     process.stdout.write(`${usage()}\n`)
     return
   }
-  const values = parseArgs(argv)
+  const { values, flags } = parseArgs(argv)
+  const withRecovery = flags.has("--with-recovery")
+  const rotateRecovery = flags.has("--rotate-recovery")
+  if (rotateRecovery && !withRecovery) throw new Error("--rotate-recovery requires --with-recovery")
   const control = parseControlUrl(required(values, "--server-url"))
   const output = resolve(required(values, "--output"))
   await requireAbsent(output)
@@ -60,12 +63,13 @@ async function main(argv) {
     audioMixIndex,
     encoding,
   })
-  await ensurePrivateDirectory(dirname(output))
-  const file = await open(output, "wx", 0o600)
+  const file = withRecovery ? await reserveOutput(output) : null
   try {
-    await file.writeFile(`${JSON.stringify(bundle, null, 2)}\n`)
-  } finally {
-    await file.close()
+    if (withRecovery) bundle.recovery = recoveryBundle(await api.enrollRecovery(sourceId, rotateRecovery), control, sourceId)
+    await writeBundle(output, bundle, file)
+  } catch (error) {
+    if (file !== null) { await file.close().catch(() => undefined); await unlink(output).catch(() => undefined) }
+    throw error
   }
   process.stdout.write(`${JSON.stringify({
     status: "written",
@@ -77,21 +81,27 @@ async function main(argv) {
 }
 
 function parseArgs(argv) {
+  const booleanFlags = new Set(["--with-recovery", "--rotate-recovery"])
   const allowed = new Set([
     "--server-url", "--password-file", "--source-id", "--obs-source-name", "--audio-mix-index",
     "--target-host", "--output", "--width", "--height", "--fps-numerator", "--fps-denominator",
     "--video-bitrate-kbps",
   ])
-  const values = new Map()
-  for (let index = 0; index < argv.length; index += 2) {
+  const values = new Map(); const flags = new Set()
+  for (let index = 0; index < argv.length;) {
     const name = argv[index]
+    if (booleanFlags.has(name)) {
+      if (flags.has(name)) throw new Error(`Duplicate argument: ${name}`)
+      flags.add(name); index += 1; continue
+    }
     const value = argv[index + 1]
     if (!allowed.has(name)) throw new Error(`Unknown argument: ${name ?? "<missing>"}\n${usage()}`)
     if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${name}\n${usage()}`)
     if (values.has(name)) throw new Error(`Duplicate argument: ${name}`)
     values.set(name, value)
+    index += 2
   }
-  return values
+  return { values, flags }
 }
 
 function required(values, name) {
@@ -130,7 +140,33 @@ function parseControlUrl(value) {
   if (url.pathname.replace(/\/+$/u, "") !== "/api/v1") {
     throw new Error("--server-url must end with /api/v1")
   }
-  return { baseUrl: `${url.origin}/api/v1`, hostname: unbracket(url.hostname), loopback }
+  return { baseUrl: `${url.origin}/api/v1`, origin: url.origin, hostname: unbracket(url.hostname), loopback }
+}
+
+function recoveryBundle(enrollment, control, sourceId) {
+  const expectedPath = `/api/v1/source-recovery/${encodeURIComponent(sourceId)}/poll`
+  if (enrollment?.schemaVersion !== 1 || enrollment.sourceId !== sourceId
+    || enrollment.controlPath !== expectedPath || !isUuid(enrollment.controllerId)
+    || typeof enrollment.controllerToken !== "string" || enrollment.controllerToken.length < 16
+    || typeof enrollment.policyVersion !== "string" || enrollment.policyVersion.length === 0) {
+    throw new Error("Recovery enrollment returned an invalid source-scoped controlPath or credential")
+  }
+  return { schemaVersion: 1, controlUrl: `${control.origin}${expectedPath}`,
+    controllerId: enrollment.controllerId, controllerToken: enrollment.controllerToken }
+}
+
+function isUuid(value) {
+  return typeof value === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu.test(value)
+}
+
+async function reserveOutput(path) {
+  await ensurePrivateDirectory(dirname(path))
+  return open(path, "wx", 0o600)
+}
+
+async function writeBundle(path, bundle, reserved) {
+  const file = reserved ?? await reserveOutput(path)
+  try { await file.writeFile(`${JSON.stringify(bundle, null, 2)}\n`) } finally { await file.close() }
 }
 
 function targetHostFor(value, control) {
@@ -193,6 +229,6 @@ function usage() {
     "Usage: node scripts/target/publisher-bundle.mjs --server-url URL --password-file FILE",
     "  --source-id ID --obs-source-name NAME --audio-mix-index 0..5 --output NEW_FILE",
     "  [--target-host HOST] [--width 1280] [--height 720] [--fps-numerator 30]",
-    "  [--fps-denominator 1] [--video-bitrate-kbps 2500]",
+    "  [--fps-denominator 1] [--video-bitrate-kbps 2500] [--with-recovery] [--rotate-recovery]",
   ].join("\n")
 }

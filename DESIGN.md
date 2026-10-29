@@ -140,6 +140,13 @@ The desktop workspace is a `scroll-body-shell`: header, notice stack, production
 - **States**: stopped, starting, sending, reconnecting, stopping, failed, platform-live, platform-unknown.
 - **Safety**: public-risk destinations require a confirmation dialog that names the destination and says media may become public.
 
+### Source Recovery Controls
+- **Structure**: source-scoped policy checkboxes, textual controller/receiver facts, retry budget, explicit Apply, Retry, Disable, and Revoke actions.
+- **States**: status unavailable, disabled, maintenance, warming, healthy, stalled, source disabled, controller offline, conflict, and pending mutation.
+- **Safety**: no remote Start. Manual OBS Start arms recovery; intentional Stop is never reversed. Disable cancels future actions and Revoke invalidates the scoped controller.
+- **Truthfulness**: cached healthy state is hidden when polling fails; unknown counters remain `Unknown`; process restart is explicitly unsupported.
+- **Security**: enrollment tokens remain CLI-only and are never rendered or persisted by the browser.
+
 ### Drawer and Dialog
 - **Structure**: labelled modal surface, close action, section body, action footer.
 - **Behavior**: focus enters, remains trapped, Escape closes when safe, focus returns to opener. Destructive/public operations use dialogs; setup uses drawers/pages.

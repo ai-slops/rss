@@ -21,7 +21,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 umask 077
 CACHE="$HOME/.cache/live-production"
 DEST="$ROOT/.tools/ubuntu"
-mkdir -p "$CACHE" "$DEST/src" "$DEST/lib/gstreamer-1.0" "$ROOT/.tools/node" "$ROOT/var/ubuntu-dependencies"
+mkdir -p "$CACHE/src" "$DEST/lib/gstreamer-1.0" "$ROOT/.tools/node" "$ROOT/var/ubuntu-dependencies"
 fetch() {
   local name=$1 digest=$2 url=$3
   if [ ! -f "$CACHE/$name" ]; then
@@ -38,15 +38,15 @@ tar -xJf "$CACHE/$NODE.tar.xz" -C "$ROOT/.tools/node" --strip-components=1
 CRATE=gst-plugin-webrtc-0.14.3
 fetch "$CRATE.crate" 3e8b92068d633cdb6be65196f45d082e7beaf5aba1a00c825753a038fac2dfc6 \
   "https://static.crates.io/crates/gst-plugin-webrtc/$CRATE.crate"
-if [ ! -f "$DEST/src/$CRATE/Cargo.toml" ]; then
-  tar -xzf "$CACHE/$CRATE.crate" -C "$DEST/src"
+if [ ! -f "$CACHE/src/$CRATE/Cargo.toml" ]; then
+  tar -xzf "$CACHE/$CRATE.crate" -C "$CACHE/src"
 fi
 rustup run 1.91.1 cargo build --locked --release --lib --jobs 2 \
-  --manifest-path "$DEST/src/$CRATE/Cargo.toml"
-install -m 755 "$DEST/src/$CRATE/target/release/libgstrswebrtc.so" "$DEST/lib/gstreamer-1.0/"
+  --manifest-path "$CACHE/src/$CRATE/Cargo.toml"
+install -m 755 "$CACHE/src/$CRATE/target/release/libgstrswebrtc.so" "$DEST/lib/gstreamer-1.0/"
 source "$ROOT/scripts/ubuntu-env.sh"
 gst-inspect-1.0 webrtcsink > "$ROOT/var/ubuntu-dependencies/webrtcsink.txt"
 dpkg-query -W > "$ROOT/var/ubuntu-dependencies/packages.tsv"
-sha256sum "$DEST/src/$CRATE/Cargo.lock" "$DEST/lib/gstreamer-1.0/libgstrswebrtc.so" \
+sha256sum "$CACHE/src/$CRATE/Cargo.lock" "$DEST/lib/gstreamer-1.0/libgstrswebrtc.so" \
   > "$ROOT/var/ubuntu-dependencies/build-hashes.txt"
 printf '%s\n' 'Native Ubuntu dependencies ready. Source scripts/ubuntu-env.sh before building and verification.'

@@ -28,7 +28,7 @@ target_compile_options(obs-live-production PRIVATE
 )
 target_link_libraries(obs-live-production PRIVATE
   OBS::libobs
-  OBS::frontend-api
+  OBS::obs-frontend-api
   Qt6::Widgets
   Threads::Threads
 )

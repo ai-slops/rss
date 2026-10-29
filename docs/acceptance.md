@@ -66,3 +66,17 @@ Controlled acceptance is not an external production certification. The internal 
 ## External gates not supplied
 
 Real OBS/plugin source separation, a target laptop's remote ICE path, platform account auto-start semantics/private test broadcast, hardware encoder performance and intended editor import are unverified until those exact systems are exercised. Controlled software fixtures cannot establish these integrations.
+
+## Delegated native Ubuntu verification, 2026-10-28
+
+The separate `live-ubuntu-validation` workspace booted one owned Ubuntu 24.04.5
+KVM VM and built clean source `08a5626711f98877553ba9080a2ccdbc821fc597`, based on
+merged baseline `77389b4fc6071c48f918f0368b11d14d99797f51`. Native locked build,
+strict Clippy, 33 UI tests/build, synthetic Stage A recording/decode with
+250.000 ms calibration, and real OBS 30.0.2 software startup passed.
+**Native acceptance failed**: stock packages lack `webrtcsink`, clean recording
+provenance lacks the asserted video interval, native lifecycle readiness fails,
+and the SRT fixture fails H.264 decode. Later Cargo test targets and full
+browser/output/editor/recovery acceptance are not claimed. The VM is stopped;
+no Studio changes, OBS product implementation, merge/deploy, or public broadcast
+occurred. See [the provenance, exact commands, failures and artifact hashes](ubuntu-validation-2026-10-28.md).

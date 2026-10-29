@@ -13,8 +13,10 @@ add_library(obs-live-production MODULE
   src/config.cpp
   src/fixture.cpp
   src/fixture_config.cpp
+  src/fixture_dispatcher.cpp
   src/fixture_prepare.cpp
   src/fixture_source.cpp
+  src/fixture_state.cpp
   src/frontend.cpp
   src/plugin.cpp
   src/publisher.cpp
@@ -46,6 +48,38 @@ if(BUILD_TESTING)
   target_include_directories(obs-live-production-srt-url-test PRIVATE src)
   add_test(NAME obs-live-production-srt-url-test
     COMMAND obs-live-production-srt-url-test
+  )
+  add_executable(obs-live-production-fixture-state-test
+    tests/fixture_state_test.cpp
+    src/fixture_state.cpp
+  )
+  target_compile_features(obs-live-production-fixture-state-test PRIVATE cxx_std_17)
+  target_compile_options(obs-live-production-fixture-state-test PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>
+  )
+  target_include_directories(obs-live-production-fixture-state-test PRIVATE src)
+  target_link_libraries(obs-live-production-fixture-state-test PRIVATE Threads::Threads)
+  add_test(NAME obs-live-production-fixture-state-test
+    COMMAND obs-live-production-fixture-state-test
+  )
+  add_executable(obs-live-production-fixture-dispatcher-test
+    tests/fixture_dispatcher_test.cpp
+    src/fixture_dispatcher.cpp
+  )
+  target_compile_features(obs-live-production-fixture-dispatcher-test PRIVATE cxx_std_17)
+  target_compile_definitions(obs-live-production-fixture-dispatcher-test PRIVATE
+    OBS_LIVE_PRODUCTION_DISPATCHER_TESTING
+  )
+  target_compile_options(obs-live-production-fixture-dispatcher-test PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>
+  )
+  target_include_directories(obs-live-production-fixture-dispatcher-test PRIVATE src)
+  target_link_libraries(obs-live-production-fixture-dispatcher-test PRIVATE
+    Qt6::Core
+    Threads::Threads
+  )
+  add_test(NAME obs-live-production-fixture-dispatcher-test
+    COMMAND obs-live-production-fixture-dispatcher-test
   )
 endif()
 

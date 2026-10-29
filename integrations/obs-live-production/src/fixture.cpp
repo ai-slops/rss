@@ -31,33 +31,58 @@ bool FixtureController::start_from_environment(std::string &error) {
     return false;
   }
 
+  if (!task_dispatcher_.open(
+          [this](uint64_t generation) { run_evaluation_task(generation); })) {
+    error = "cannot create fixture evaluation receiver";
+    return false;
+  }
   active_.store(true);
   deadline_ns_ = os_gettime_ns() +
                  static_cast<uint64_t>(fixture_.deadline_seconds) *
                      1000000000ULL;
   obs_add_tick_callback(deadline_tick, this);
   tick_registered_ = true;
+  evaluation_state_.begin_transition();
+  bool started = true;
   for (PrimarySender &sender : primaries_) {
     if (!sender.publisher->initialize(error) ||
         !sender.publisher->start(error)) {
       write_final_report("failed");
-      return false;
+      started = false;
+      break;
     }
   }
+  finish_transition();
+  if (!started)
+    return false;
   schedule_evaluate();
   return true;
 }
 
 void FixtureController::schedule_evaluate() {
-  if (!active_.load() || evaluation_queued_.exchange(true))
-    return;
-  obs_queue_task(OBS_TASK_UI, evaluate_task, this, false);
+  if (const auto generation = evaluation_state_.request(active_.load()))
+    queue_evaluate(*generation);
 }
 
-void FixtureController::evaluate_task(void *context) {
-  auto *controller = static_cast<FixtureController *>(context);
-  controller->evaluation_queued_.store(false);
-  controller->evaluate();
+void FixtureController::queue_evaluate(uint64_t generation) {
+  if (!task_dispatcher_.enqueue(generation)) {
+    evaluation_state_.cancel_task(generation);
+    if (active_.load())
+      blog(LOG_ERROR, "[obs-live-production] cannot queue evaluation task");
+  }
+}
+
+void FixtureController::finish_transition() {
+  if (const auto generation = evaluation_state_.end_transition(active_.load()))
+    queue_evaluate(*generation);
+}
+
+void FixtureController::run_evaluation_task(uint64_t generation) {
+  if (!evaluation_state_.begin_task(generation, active_.load()))
+    return;
+  evaluate();
+  if (const auto next = evaluation_state_.finish_task(active_.load()))
+    queue_evaluate(*next);
 }
 
 void FixtureController::deadline_tick(void *context, float) {
@@ -90,6 +115,12 @@ void FixtureController::evaluate() {
     return;
   }
   if (negatives_started_) {
+    for (const NegativeAttempt &attempt : negatives_) {
+      if (attempt.result == "fixtureError") {
+        write_final_report("failed");
+        return;
+      }
+    }
     bool all_rejected = true;
     for (NegativeAttempt &attempt : negatives_) {
       const std::string state = attempt.publisher->state();
@@ -144,6 +175,9 @@ void FixtureController::write_final_report(const std::string &state) {
 void FixtureController::stop() {
   if (!active_.exchange(false) && fixture_sources_.empty())
     return;
+  evaluation_state_.begin_transition();
+  evaluation_state_.invalidate();
+  task_dispatcher_.close();
   if (tick_registered_) {
     obs_remove_tick_callback(deadline_tick, this);
     tick_registered_ = false;
@@ -159,6 +193,7 @@ void FixtureController::stop() {
   for (obs_source_t *source : fixture_sources_)
     obs_source_release(source);
   fixture_sources_.clear();
+  finish_transition();
 }
 
 }

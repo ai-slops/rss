@@ -114,21 +114,32 @@ bool FixtureController::prepare(std::string &error) {
 }
 
 bool FixtureController::start_negative_attempts() {
-  negatives_started_ = true;
+  evaluation_state_.begin_transition();
   for (NegativeAttempt &attempt : negatives_) {
     const std::string instance = report_kind(attempt.kind) + "-" +
                                  attempt.config.target.source_id;
     attempt.publisher = std::make_unique<Publisher>(
         attempt.config, instance, [this] { schedule_evaluate(); });
+  }
+  negatives_started_ = true;
+  bool initialized = true;
+  for (NegativeAttempt &attempt : negatives_) {
     std::string error;
     if (!attempt.publisher->initialize(error)) {
       attempt.result = "fixtureError";
-      return false;
+      initialized = false;
+      break;
     }
-    if (!attempt.publisher->start(error))
-      attempt.result = "rejected";
   }
-  return true;
+  if (initialized) {
+    for (NegativeAttempt &attempt : negatives_) {
+      std::string error;
+      if (!attempt.publisher->start(error))
+        attempt.result = "rejected";
+    }
+  }
+  finish_transition();
+  return initialized;
 }
 
 }

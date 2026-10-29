@@ -1,6 +1,8 @@
 #pragma once
 
 #include "config.hpp"
+#include "fixture_dispatcher.hpp"
+#include "fixture_state.hpp"
 #include "publisher.hpp"
 
 #include <obs.h>
@@ -33,9 +35,11 @@ private:
     bool stopped = false;
   };
 
-  static void evaluate_task(void *context);
   static void deadline_tick(void *context, float seconds);
   void schedule_evaluate();
+  void queue_evaluate(uint64_t generation);
+  void run_evaluation_task(uint64_t generation);
+  void finish_transition();
   void evaluate();
   bool prepare(std::string &error);
   bool start_negative_attempts();
@@ -47,13 +51,14 @@ private:
   std::vector<PrimarySender> primaries_;
   std::vector<NegativeAttempt> negatives_;
   std::atomic<bool> active_ = false;
-  std::atomic<bool> evaluation_queued_ = false;
   std::atomic<bool> timed_out_ = false;
   std::atomic<uint64_t> last_tick_queue_ns_ = 0;
   uint64_t deadline_ns_ = 0;
   bool negatives_started_ = false;
   bool report_written_ = false;
   bool tick_registered_ = false;
+  FixtureTaskDispatcher task_dispatcher_;
+  FixtureEvaluationState evaluation_state_;
 };
 
 }

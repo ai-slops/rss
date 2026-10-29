@@ -98,6 +98,26 @@ void close_does_not_drain_unrelated_meta_calls() {
   require(unrelated_callbacks == 1, "unrelated Qt callback was drained");
 }
 
+void paused_dispatch_holds_until_resume_and_close_cancels_it() {
+  // Given
+  live_production::FixtureTaskDispatcher dispatcher;
+  std::atomic<size_t> callbacks = 0;
+  require(dispatcher.open([&](uint64_t) { callbacks.fetch_add(1); }),
+          "dispatcher open failed");
+  require(dispatcher.pause(true), "dispatcher pause failed");
+  require(dispatcher.enqueue(9), "paused action was not retained");
+  QCoreApplication::processEvents(QEventLoop::AllEvents);
+  require(callbacks.load() == 0, "paused action executed early");
+
+  // When
+  dispatcher.close();
+  require(!dispatcher.pause(false), "closed dispatcher resumed held action");
+  QCoreApplication::processEvents(QEventLoop::AllEvents);
+
+  // Then
+  require(callbacks.load() == 0, "closed dispatcher executed held action");
+}
+
 }
 
 int main(int argc, char **argv) {
@@ -105,6 +125,7 @@ int main(int argc, char **argv) {
   try {
     paused_enqueue_cannot_survive_stop();
     close_does_not_drain_unrelated_meta_calls();
+    paused_dispatch_holds_until_resume_and_close_cancels_it();
   } catch (const std::exception &error) {
     std::cerr << error.what() << '\n';
     return 1;

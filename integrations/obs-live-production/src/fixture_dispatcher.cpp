@@ -8,6 +8,7 @@
 #include <condition_variable>
 #include <mutex>
 #include <new>
+#include <optional>
 #include <utility>
 
 namespace live_production {
@@ -20,6 +21,8 @@ struct FixtureTaskDispatcher::Core {
   Callback callback;
   size_t executing = 0;
   bool closed = true;
+  bool paused = false;
+  std::optional<uint64_t> held_generation;
 #ifdef OBS_LIVE_PRODUCTION_DISPATCHER_TESTING
   std::function<void()> admission_hook;
 #endif
@@ -57,6 +60,24 @@ bool FixtureTaskDispatcher::enqueue(uint64_t generation) {
   if (core->admission_hook)
     core->admission_hook();
 #endif
+  if (core->paused) {
+    if (core->held_generation) return false;
+    core->held_generation = generation;
+    return true;
+  }
+  return QMetaObject::invokeMethod(
+      core->receiver, [core, generation] { execute(core, generation); },
+      Qt::QueuedConnection);
+}
+
+bool FixtureTaskDispatcher::pause(bool paused) {
+  const std::shared_ptr<Core> core = core_;
+  std::lock_guard<std::mutex> lock(core->mutex);
+  if (core->closed || !core->receiver) return false;
+  core->paused = paused;
+  if (paused || !core->held_generation) return true;
+  const uint64_t generation = *core->held_generation;
+  core->held_generation.reset();
   return QMetaObject::invokeMethod(
       core->receiver, [core, generation] { execute(core, generation); },
       Qt::QueuedConnection);
@@ -70,6 +91,8 @@ void FixtureTaskDispatcher::close() {
     if (core->closed && !core->receiver)
       return;
     core->closed = true;
+    core->paused = false;
+    core->held_generation.reset();
     core->callback = {};
     receiver = std::exchange(core->receiver, nullptr);
     const bool receiver_thread =

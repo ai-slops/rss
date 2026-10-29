@@ -19,6 +19,7 @@ public:
 
   bool open(Callback callback);
   bool enqueue(uint64_t generation);
+  bool pause(bool paused);
   void close();
 
 #ifdef OBS_LIVE_PRODUCTION_DISPATCHER_TESTING

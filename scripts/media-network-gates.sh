@@ -32,8 +32,10 @@ timeout -s INT 5 gst-launch-1.0 -e -q \
   videotestsrc is-live=true \
   ! video/x-raw,width=640,height=360,framerate=30/1 \
   ! videoconvert \
-  ! x264enc tune=zerolatency key-int-max=30 bitrate=1000 \
-  ! h264parse config-interval=-1 \
+  ! video/x-raw,format=I420 \
+  ! x264enc tune=zerolatency key-int-max=30 bitrate=1000 byte-stream=true option-string=repeat-headers=1 \
+  ! video/x-h264,stream-format=byte-stream,alignment=au \
+  ! h264parse config-interval=-1 disable-passthrough=true \
   ! mux. \
   audiotestsrc is-live=true \
   ! audioconvert \
@@ -75,6 +77,7 @@ wait "$rtmp_receiver" || true
 rtmp_receiver=
 
 for media_file in "$OUTPUT_DIR/srt-received.ts" "$OUTPUT_DIR/rtmp-received.flv"; do
+  test "$(ffprobe -v error -select_streams v:0 -show_entries stream=codec_name,width,height -of csv=p=0 "$media_file" | sed -n '1p')" = "h264,640,360"
   test "$(ffprobe -v error -select_streams a:0 -show_entries stream=sample_rate,channels -of csv=p=0 "$media_file" | sed -n '1p')" = "48000,2"
   ffprobe \
     -v error \

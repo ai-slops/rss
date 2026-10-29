@@ -21,7 +21,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
 umask 077
 CACHE="$HOME/.cache/live-production"
 DEST="$ROOT/.tools/ubuntu"
-mkdir -p "$CACHE/src" "$DEST/lib/gstreamer-1.0" "$ROOT/.tools/node" "$ROOT/var/ubuntu-dependencies"
+mkdir -p "$CACHE" "$DEST/lib/gstreamer-1.0" "$ROOT/var/ubuntu-dependencies"
 fetch() {
   local name=$1 digest=$2 url=$3
   if [ ! -f "$CACHE/$name" ]; then
@@ -34,19 +34,24 @@ fetch() {
 NODE=node-v24.18.1-linux-x64
 fetch "$NODE.tar.xz" d6c664df3f3f61458e8c277585571328522d705166723a7c7823a9253a4d15a0 \
   "https://nodejs.org/dist/v24.18.1/$NODE.tar.xz"
+rm -rf "$ROOT/.tools/node"
+mkdir -p "$ROOT/.tools/node"
 tar -xJf "$CACHE/$NODE.tar.xz" -C "$ROOT/.tools/node" --strip-components=1
+test "$("$ROOT/.tools/node/bin/node" --version)" = v24.18.1
 CRATE=gst-plugin-webrtc-0.14.3
 fetch "$CRATE.crate" 3e8b92068d633cdb6be65196f45d082e7beaf5aba1a00c825753a038fac2dfc6 \
   "https://static.crates.io/crates/gst-plugin-webrtc/$CRATE.crate"
-if [ ! -f "$CACHE/src/$CRATE/Cargo.toml" ]; then
-  tar -xzf "$CACHE/$CRATE.crate" -C "$CACHE/src"
-fi
-rustup run 1.91.1 cargo build --locked --release --lib --jobs 2 \
-  --manifest-path "$CACHE/src/$CRATE/Cargo.toml"
-install -m 755 "$CACHE/src/$CRATE/target/release/libgstrswebrtc.so" "$DEST/lib/gstreamer-1.0/"
+BUILD=$(mktemp -d "$CACHE/build-$CRATE.XXXXXX")
+trap 'rm -rf "$BUILD"' EXIT
+tar -xzf "$CACHE/$CRATE.crate" -C "$BUILD"
+CARGO_TARGET_DIR="$BUILD/target" rustup run 1.91.1 cargo build --locked --release --lib --jobs 2 \
+  --manifest-path "$BUILD/$CRATE/Cargo.toml"
+install -m 755 "$BUILD/target/release/libgstrswebrtc.so" "$DEST/lib/gstreamer-1.0/"
+install -m 600 "$BUILD/$CRATE/Cargo.lock" "$ROOT/var/ubuntu-dependencies/rswebrtc-Cargo.lock"
 source "$ROOT/scripts/ubuntu-env.sh"
-gst-inspect-1.0 webrtcsink > "$ROOT/var/ubuntu-dependencies/webrtcsink.txt"
+LC_ALL=C gst-inspect-1.0 webrtcsink > "$ROOT/var/ubuntu-dependencies/webrtcsink.txt"
+test "$(sed -n 's/^[[:space:]]*Filename[[:space:]]*//p' "$ROOT/var/ubuntu-dependencies/webrtcsink.txt")" = "$DEST/lib/gstreamer-1.0/libgstrswebrtc.so"
 dpkg-query -W > "$ROOT/var/ubuntu-dependencies/packages.tsv"
-sha256sum "$CACHE/src/$CRATE/Cargo.lock" "$DEST/lib/gstreamer-1.0/libgstrswebrtc.so" \
+sha256sum "$ROOT/var/ubuntu-dependencies/rswebrtc-Cargo.lock" "$DEST/lib/gstreamer-1.0/libgstrswebrtc.so" \
   > "$ROOT/var/ubuntu-dependencies/build-hashes.txt"
 printf '%s\n' 'Native Ubuntu dependencies ready. Source scripts/ubuntu-env.sh before building and verification.'

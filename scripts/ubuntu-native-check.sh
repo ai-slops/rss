@@ -3,34 +3,24 @@
 set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 cd "$ROOT"
+umask 077
 mkdir -p var/ubuntu-native
 exec > >(tee var/ubuntu-native/session.log) 2>&1
 printf 'started_at=%s source=%s\n' "$(date -u +%FT%TZ)" "$(GIT_MASTER=1 git rev-parse HEAD)"
 test -z "$(GIT_MASTER=1 git status --porcelain)"
+GIT_MASTER=1 git rev-parse HEAD > var/ubuntu-native/source-head.txt
+GIT_MASTER=1 git status --porcelain=v1 > var/ubuntu-native/source-status.txt
 test ! -e .tools/sysroot
 source /etc/os-release
 test "$ID" = ubuntu && test "$VERSION_ID" = 24.04
 sudo apt-get update
-sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-  build-essential pkg-config curl ca-certificates git xz-utils python3 \
-  libglib2.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
-  gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-  gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav \
-  gstreamer1.0-nice ffmpeg obs-studio libobs-dev cmake xvfb xauth mesa-utils
-dpkg-query -W > var/ubuntu-native/packages.tsv
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends curl ca-certificates
 curl --fail --location --proto '=https' --tlsv1.2 https://sh.rustup.rs -o var/ubuntu-native/rustup-init.sh
 sha256sum var/ubuntu-native/rustup-init.sh
 sh var/ubuntu-native/rustup-init.sh -y --profile minimal --default-toolchain 1.91.1 --component rustfmt,clippy
-source "$HOME/.cargo/env"
-NODE=node-v24.18.1-linux-x64
-curl --fail --location "https://nodejs.org/dist/v24.18.1/$NODE.tar.xz" -o "var/ubuntu-native/$NODE.tar.xz"
-curl --fail --location https://nodejs.org/dist/v24.18.1/SHASUMS256.txt -o var/ubuntu-native/node-shasums.txt
-(cd var/ubuntu-native; sha256sum -c --ignore-missing node-shasums.txt)
-mkdir -p .tools/node
-tar -xJf "var/ubuntu-native/$NODE.tar.xz" -C .tools/node --strip-components=1
-export PATH="$ROOT/.tools/node/bin:$PATH"
-export LIVE_PRODUCTION_NATIVE=1 CARGO_BUILD_JOBS=2
-source scripts/env.sh
+bash scripts/ubuntu-dependencies.sh
+source scripts/ubuntu-env.sh
+dpkg-query -W > var/ubuntu-native/packages.tsv
 {
   rustc --version; cargo --version; cc --version; node --version; npm --version
   pkg-config --modversion gstreamer-1.0 gstreamer-app-1.0 gio-2.0 libobs

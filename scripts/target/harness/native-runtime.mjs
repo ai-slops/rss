@@ -7,6 +7,10 @@ export async function startServer(processes, options, privateDirectory, password
   const port = await freeTcpPort()
   const stateDirectory = join(privateDirectory, "state")
   await mkdir(stateDirectory, { recursive: true, mode: 0o700 })
+  return startServerAt(processes, options, privateDirectory, password, phase, stateDirectory, port)
+}
+
+export async function startServerAt(processes, options, privateDirectory, password, phase, stateDirectory, port) {
   const record = await processes.spawn(`server-${phase}`, options.serverBinary, [], {
     cwd: options.root,
     logPath: join(privateDirectory, `${phase}-server.log`),
@@ -41,6 +45,16 @@ export async function startVirtualDisplay(processes, options, privateDirectory) 
 }
 
 export async function startObs(processes, options, privateDirectory, fixtureFile, display) {
+  return startObsWithFixture(processes, options, privateDirectory, display,
+    { LIVE_PRODUCTION_OBS_FIXTURE_FILE: fixtureFile })
+}
+
+export async function startRecoveryObs(processes, options, privateDirectory, fixtureFile, display) {
+  return startObsWithFixture(processes, options, privateDirectory, display,
+    { LIVE_PRODUCTION_OBS_RECOVERY_FIXTURE_FILE: fixtureFile })
+}
+
+async function startObsWithFixture(processes, options, privateDirectory, display, fixtureEnvironment) {
   const config = join(privateDirectory, "obs-config")
   const data = join(privateDirectory, "obs-data")
   await mkdir(config, { recursive: true, mode: 0o700 })
@@ -60,7 +74,7 @@ export async function startObs(processes, options, privateDirectory, fixtureFile
       XDG_DATA_HOME: data,
       OBS_PLUGINS_PATH: pluginBin,
       OBS_PLUGINS_DATA_PATH: pluginData,
-      LIVE_PRODUCTION_OBS_FIXTURE_FILE: fixtureFile,
+      ...fixtureEnvironment,
     },
   })
 }

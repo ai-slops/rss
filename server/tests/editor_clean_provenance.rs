@@ -7,8 +7,8 @@ use std::{collections::BTreeSet, sync::Arc, time::Duration};
 
 use common::Harness;
 use editor_clean_provenance_support::{
-    active_session_metadata, assert_provenance, export, free_udp_port, get_json, mixed_recording,
-    reopen, srt_sender, wait_connected,
+    active_session_metadata, active_session_path, assert_provenance, export, free_udp_port,
+    get_json, mixed_recording, preserve_native_session, reopen, srt_sender, wait_connected,
 };
 use gst::prelude::*;
 use gstreamer as gst;
@@ -72,6 +72,10 @@ async fn clean_recording_reconnect_provenance_survives_catalog_reload() {
         .set_state(gst::State::Playing)
         .expect("second sender");
     tokio::time::sleep(Duration::from_millis(2_500)).await;
+    let session_path = active_session_path(
+        harness._directory.path(),
+        output_id.as_str().expect("output id"),
+    );
     let active_metadata = active_session_metadata(
         harness._directory.path(),
         output_id.as_str().expect("output id"),
@@ -82,7 +86,6 @@ async fn clean_recording_reconnect_provenance_survives_catalog_reload() {
         .iter()
         .filter_map(|value| value["continuity_generation"].as_u64())
         .collect::<BTreeSet<_>>();
-    assert_eq!(active_generations, BTreeSet::from([1, 2]));
     let stopped = harness
         .command(
             &cookie,
@@ -93,6 +96,8 @@ async fn clean_recording_reconnect_provenance_survives_catalog_reload() {
         )
         .await;
     assert_eq!(stopped["status"], "applied", "{stopped}");
+    preserve_native_session(&session_path);
+    assert_eq!(active_generations, BTreeSet::from([1, 2]));
     second
         .set_state(gst::State::Null)
         .expect("stop second sender");

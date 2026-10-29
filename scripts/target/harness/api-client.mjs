@@ -62,6 +62,7 @@ export class ApiClient {
       headers,
       body: options.body === undefined ? undefined : JSON.stringify(options.body),
       signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
+      redirect: "error",
     })
     if (!response.ok) throw new Error(`API ${path} failed with HTTP ${response.status}`)
     return response

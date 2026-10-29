@@ -84,8 +84,15 @@ export async function freeUdpPort() {
   })
 }
 
-export async function waitForFile(path, timeoutMs) {
-  await poll(async () => stat(path).then(() => true).catch(() => false), timeoutMs, `file ${path}`)
+export async function waitForFile(path, timeoutMs, record = null) {
+  await poll(async () => {
+    if (await stat(path).then(() => true).catch(() => false)) return true
+    if (record !== null && (record.supervisor.exitCode !== null || record.supervisor.signalCode !== null)) {
+      const cause = { label: record.label, exitCode: record.supervisor.exitCode, signal: record.supervisor.signalCode }
+      throw new Error(`${record.label} exited before its report: exit=${cause.exitCode} signal=${cause.signal}`, { cause })
+    }
+    return false
+  }, timeoutMs, `file ${path}`)
 }
 
 export async function poll(check, timeoutMs, label) {

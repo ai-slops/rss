@@ -66,3 +66,34 @@ Controlled acceptance is not an external production certification. The internal 
 ## External gates not supplied
 
 Real OBS/plugin source separation, a target laptop's remote ICE path, platform account auto-start semantics/private test broadcast, hardware encoder performance and intended editor import are unverified until those exact systems are exercised. Controlled software fixtures cannot establish these integrations.
+
+## Delegated native Ubuntu verification, 2026-10-28
+
+The separate `live-ubuntu-validation` workspace booted one owned Ubuntu 24.04.5
+KVM VM and built clean source `08a5626711f98877553ba9080a2ccdbc821fc597`, based on
+merged baseline `77389b4fc6071c48f918f0368b11d14d99797f51`. Native locked build,
+strict Clippy, 33 UI tests/build, synthetic Stage A recording/decode with
+250.000 ms calibration, and real OBS 30.0.2 software startup passed.
+**Native acceptance failed**: stock packages lack `webrtcsink`, clean recording
+provenance lacks the asserted video interval, native lifecycle readiness fails,
+and the SRT fixture fails H.264 decode. Later Cargo test targets and full
+browser/output/editor/recovery acceptance are not claimed. The VM is stopped;
+no Studio changes, OBS product implementation, merge/deploy, or public broadcast
+occurred. See [the provenance, exact commands, failures and artifact hashes](ubuntu-validation-2026-10-28.md).
+
+## Resumed native Ubuntu / OBS verification, 2026-10-29
+
+The same retained VM tested exact code
+`9fa1395c136d6a62a9782f0f836d4747035e1f15`, combining primary checkpoint
+`22e7951757ddf3b0d85ed6d23363a2c2f33cee4c` with the preserved Ubuntu track.
+Native rswebrtc, OBS plugin build/link/load, dependency setup, strict build/lint,
+33 UI tests, Stage A, and the repaired full-decode SRT/RTMP fixture pass.
+All **29 target tests pass with native drivers enabled and zero skips**, including
+authenticated synthetic SRT recording/recovery and portable export decoding.
+**Genuine OBS acceptance fails**: the plugin crashes with SIGSEGV during
+reentrant negative-sender initialization; GDB confirms `Publisher::state(this=0x0)`.
+Clean reconnect provenance/unwind and supervisor owner-loss reaping also remain
+failed. The VM is stopped, its exact child reaped and managed registration removed.
+No product rewrite, existing Studio change, protected merge/deploy or public
+broadcast occurred. See [the exact source, root handoff, regression evidence,
+artifacts and remaining gates](ubuntu-obs-verification-2026-10-29.md).

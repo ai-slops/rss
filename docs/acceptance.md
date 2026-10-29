@@ -80,3 +80,20 @@ and the SRT fixture fails H.264 decode. Later Cargo test targets and full
 browser/output/editor/recovery acceptance are not claimed. The VM is stopped;
 no Studio changes, OBS product implementation, merge/deploy, or public broadcast
 occurred. See [the provenance, exact commands, failures and artifact hashes](ubuntu-validation-2026-10-28.md).
+
+## Resumed native Ubuntu / OBS verification, 2026-10-29
+
+The same retained VM tested exact code
+`9fa1395c136d6a62a9782f0f836d4747035e1f15`, combining primary checkpoint
+`22e7951757ddf3b0d85ed6d23363a2c2f33cee4c` with the preserved Ubuntu track.
+Native rswebrtc, OBS plugin build/link/load, dependency setup, strict build/lint,
+33 UI tests, Stage A, and the repaired full-decode SRT/RTMP fixture pass.
+All **29 target tests pass with native drivers enabled and zero skips**, including
+authenticated synthetic SRT recording/recovery and portable export decoding.
+**Genuine OBS acceptance fails**: the plugin crashes with SIGSEGV during
+reentrant negative-sender initialization; GDB confirms `Publisher::state(this=0x0)`.
+Clean reconnect provenance/unwind and supervisor owner-loss reaping also remain
+failed. The VM is stopped, its exact child reaped and managed registration removed.
+No product rewrite, existing Studio change, protected merge/deploy or public
+broadcast occurred. See [the exact source, root handoff, regression evidence,
+artifacts and remaining gates](ubuntu-obs-verification-2026-10-29.md).

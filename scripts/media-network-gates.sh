@@ -22,28 +22,36 @@ trap 'exit 130' INT
 trap 'exit 143' TERM HUP
 
 timeout 12 gst-launch-1.0 -e -q \
-  srtsrc uri="srt://127.0.0.1:$SRT_PORT?mode=listener" wait-for-connection=true \
+  srtsrc uri="srt://127.0.0.1:$SRT_PORT?mode=listener" latency=125 keep-listening=false blocksize=4096 wait-for-connection=true \
   ! filesink location="$OUTPUT_DIR/srt-received.ts" &
 srt_receiver=$!
 sleep 1
-timeout -s INT 5 gst-launch-1.0 -e -q \
-  mpegtsmux name=mux \
-  ! srtsink uri="srt://127.0.0.1:$SRT_PORT?mode=caller" wait-for-connection=true \
-  videotestsrc is-live=true \
+timeout 10 gst-launch-1.0 -e -q \
+  mpegtsmux name=mux alignment=7 \
+  ! tee name=srt_out \
+  srt_out. ! queue ! srtsink uri="srt://127.0.0.1:$SRT_PORT?mode=caller" latency=125 wait-for-connection=true \
+  srt_out. ! queue ! fakesink sync=true ts-offset="${SRT_DRAIN_NS:-500000000}" \
+  videotestsrc is-live=true num-buffers=150 \
   ! video/x-raw,width=640,height=360,framerate=30/1 \
   ! videoconvert \
   ! x264enc tune=zerolatency key-int-max=30 bitrate=1000 \
   ! h264parse config-interval=-1 \
   ! mux. \
-  audiotestsrc is-live=true \
+  audiotestsrc is-live=true num-buffers=235 \
   ! audioconvert \
   ! audioresample \
   ! audio/x-raw,rate=48000,channels=2 \
   ! voaacenc bitrate=128000 \
   ! aacparse \
-  ! mux. || test "$?" -eq 124
-wait "$srt_receiver" || test "$?" -eq 124
+  ! mux.
+wait "$srt_receiver"
 srt_receiver=
+ffprobe -v error -count_frames -select_streams v:0 -show_entries stream=nb_read_frames -of json "$OUTPUT_DIR/srt-received.ts" |
+  python3 -c 'import json, sys
+frames = int(json.load(sys.stdin)["streams"][0]["nb_read_frames"])
+print(f"srt_decoded_video_frames={frames}")
+if frames != 150:
+    raise SystemExit("SRT fixture lost video frames")'
 
 timeout 15 ffmpeg \
   -nostdin \

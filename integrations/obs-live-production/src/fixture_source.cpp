@@ -118,7 +118,7 @@ private:
           next_video = now + video_interval;
       }
       if (now >= next_audio) {
-        output_audio(next_audio - start);
+        output_audio(next_audio);
         next_audio += audio_interval;
         if (next_audio + audio_interval * 4 < now)
           next_audio = now + audio_interval;

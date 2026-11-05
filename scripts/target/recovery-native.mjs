@@ -44,6 +44,7 @@ try {
       reportPath: resolve(privateDirectory, "native-preflight.json") })
     if (preflight.status !== "pass") throw new Error("Native Ubuntu recovery preflight did not pass")
     const report = await runRecoveryNative(options, evidenceDirectory, privateDirectory)
+    if (report.status !== "pass") process.exitCode = 1
     process.stdout.write(`${JSON.stringify({ status: report.status,
       report: resolve(evidenceDirectory, "recovery-report.json") })}\n`)
   }

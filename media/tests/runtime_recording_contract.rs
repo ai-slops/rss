@@ -1,5 +1,7 @@
 use std::time::{Duration, Instant};
 
+mod native_evidence;
+
 use live_production_media::{
     engine::{EngineConfig, MediaEngine},
     output::{
@@ -72,6 +74,7 @@ fn dynamic_take_records_real_program_without_restarting_consumer() -> anyhow::Re
 
     // Then
     let segments = manager.recordings(&output_id)?;
+    native_evidence::preserve(directory.path(), "runtime-recording")?;
     assert!(
         segments.len() >= 2,
         "expected bounded Program segments: {segments:?}"

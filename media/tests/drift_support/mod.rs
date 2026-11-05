@@ -130,6 +130,10 @@ impl Fixture {
         wait_for_stopped(&self.outputs, &self.output_id)?;
         self.outputs.recordings(&self.output_id).map_err(Into::into)
     }
+
+    pub fn recording_directory(&self) -> &std::path::Path {
+        self._directory.path()
+    }
 }
 
 fn apply_audio_route(engine: &MediaEngine, added: &EngineEvent) -> anyhow::Result<u64> {

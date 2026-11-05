@@ -1,4 +1,5 @@
 mod drift_support;
+mod native_evidence;
 
 use std::time::{Duration, Instant};
 
@@ -25,6 +26,16 @@ fn sustained_independent_clocks_report_drift_and_preserve_bounded_progress() -> 
     reconnect.stop()?;
     let audio_route_sequence = fixture.audio_route_sequence;
     let segments = fixture.finish()?;
+    native_evidence::preserve(fixture.recording_directory(), "srt-drift")?;
+    println!(
+        "drift_before_decode duration_s={} frames={} rss_growth_kib={} max_video_queue_ns={} max_audio_queue_ns={} segments={}",
+        started.elapsed().as_secs(),
+        samples.program_frame_growth,
+        samples.rss_growth_kib(),
+        samples.max_video_queue_ns,
+        samples.max_audio_queue_ns,
+        segments.len()
+    );
     let media = decode_recordings(&segments)?;
 
     // Then

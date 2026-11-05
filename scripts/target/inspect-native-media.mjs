@@ -12,7 +12,10 @@ async function walk(directory) {
   for (const item of await readdir(directory, { withFileTypes: true })) {
     const path = join(directory, item.name)
     if (item.isDirectory()) await walk(path)
-    else if (/^segment-\d+\.mkv$/u.test(item.name)) inspect(path)
+    else if (/^segment-\d+\.mkv$/u.test(item.name)) {
+      try { inspect(path) }
+      catch (error) { evidence.push({ path, status: "failed", detail: error.message }) }
+    }
   }
 }
 

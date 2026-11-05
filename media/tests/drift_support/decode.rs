@@ -41,8 +41,9 @@ fn nonblack_pixels(path: &std::path::Path) -> anyhow::Result<usize> {
         .output()?;
     anyhow::ensure!(
         output.status.success(),
-        "video decode failed for {}",
-        path.display()
+        "video decode failed for {}: {}",
+        path.display(),
+        String::from_utf8_lossy(&output.stderr)
     );
     Ok(output
         .stdout
@@ -73,8 +74,9 @@ fn pcm_rms(path: &std::path::Path) -> anyhow::Result<f64> {
         .output()?;
     anyhow::ensure!(
         output.status.success(),
-        "audio decode failed for {}",
-        path.display()
+        "audio decode failed for {}: {}",
+        path.display(),
+        String::from_utf8_lossy(&output.stderr)
     );
     let samples: Vec<_> = output
         .stdout

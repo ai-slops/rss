@@ -77,13 +77,16 @@ export async function captureStrictSourceRecording(api, sourceId, supervisorBina
   await new Promise((resolve) => setTimeout(resolve, 4_000))
   snapshot = await api.snapshot(); await api.command("output.stop", output.id, {}, { snapshot })
   snapshot = await api.snapshot()
-  const analyzed = await analyzeRecordingGroup(
-    snapshot.recordings.filter((recording) => recording.outputId === output.id),
-    { label: name, profile: { width: 1280, height: 720 },
-      content: { kind: "clean", label: name, color: "red", toneHz: 440 } }, supervisorBinary)
-  snapshot = await api.snapshot(); await api.command("output.delete", output.id, {}, { snapshot })
-  return { segments: analyzed.segments.length, content: analyzed.content,
-    video: analyzed.segments[0].video, audio: analyzed.segments[0].audio }
+  try {
+    const analyzed = await analyzeRecordingGroup(
+      snapshot.recordings.filter((recording) => recording.outputId === output.id),
+      { label: name, profile: { width: 1280, height: 720 },
+        content: { kind: "clean", label: name, color: "red", toneHz: 440 } }, supervisorBinary)
+    return { segments: analyzed.segments.length, content: analyzed.content,
+      video: analyzed.segments[0].video, audio: analyzed.segments[0].audio }
+  } finally {
+    snapshot = await api.snapshot(); await api.command("output.delete", output.id, {}, { snapshot })
+  }
 }
 
 function advanced(after, before) {

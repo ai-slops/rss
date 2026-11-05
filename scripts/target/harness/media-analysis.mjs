@@ -71,6 +71,7 @@ function analyzeProgramContent(paths, content, supervisorBinary) {
   const { left, right } = layout
   if (left.red <= left.blue * 1.5 || right.blue <= right.red * 1.5) throw new Error("Program did not decode red-left and blue-right composition")
   const powers = strongestProgramTones(paths, content.toneHz, supervisorBinary)
+  assertSignalLevel(powers, "Program")
   for (const toneHz of content.toneHz) {
     if (powers[toneHz] <= powers.noise * 4) {
       throw new Error(`Program omitted routed ${toneHz} Hz tone: ${JSON.stringify(powers)}`)
@@ -100,7 +101,8 @@ function tonePowers(path, supervisorBinary) {
   ], { binary: true })
   const samples = new Float32Array(Math.floor(raw.length / 4))
   for (let index = 0; index < samples.length; index += 1) samples[index] = raw.readFloatLE(index * 4)
-  return { 440: goertzel(samples, 440), 880: goertzel(samples, 880), noise: goertzel(samples, 660) }
+  const rms = Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / Math.max(samples.length, 1))
+  return { 440: goertzel(samples, 440), 880: goertzel(samples, 880), noise: goertzel(samples, 660), rms }
 }
 
 function strongestTone(paths, expectedHz, supervisorBinary) {
@@ -124,9 +126,14 @@ function programToneRatio(powers, tones) {
   return Math.min(...tones.map((tone) => powers[tone] / Math.max(powers.noise, Number.EPSILON)))
 }
 
-function assertDominantTone(powers, expectedHz, label) {
+export function assertDominantTone(powers, expectedHz, label) {
+  assertSignalLevel(powers, label)
   const alternate = expectedHz === 440 ? 880 : 440
   if (powers[expectedHz] <= Math.max(powers[alternate], powers.noise) * 4) throw new Error(`${label} omitted dominant ${expectedHz} Hz tone: ${JSON.stringify(powers)}`)
+}
+
+function assertSignalLevel(powers, label) {
+  if (!Number.isFinite(powers.rms) || powers.rms < 0.001) throw new Error(`${label} fixture audio is silent or below -60 dBFS RMS: ${JSON.stringify(powers)}`)
 }
 
 function goertzel(samples, frequency) {

@@ -21,6 +21,7 @@ const MAXIMUM_REQUEST_IDS: usize = 64;
 
 pub struct SourceRecoveryManager {
     records: HashMap<String, RecoveryRecord>,
+    bound_run_id: Option<String>,
 }
 
 pub struct SourceContext {
@@ -48,15 +49,14 @@ impl SourceRecoveryManager {
             .into_iter()
             .map(|(key, value)| Ok((key, serde_json::from_value(value)?)))
             .collect::<anyhow::Result<HashMap<_, _>>>()?;
-        Ok(Self { records })
+        Ok(Self {
+            records,
+            bound_run_id: None,
+        })
     }
 
     pub fn status(&mut self, source: SourceContext, now: u64) -> RecoveryStatus {
-        let record = self
-            .records
-            .get(&source.id)
-            .cloned()
-            .unwrap_or_else(|| RecoveryRecord::new(&source.id));
+        let record = self.record_for_source(&source.id);
         status(&record, &source, now)
     }
 
@@ -83,16 +83,13 @@ impl SourceRecoveryManager {
         now: u64,
     ) -> Result<PollResponse> {
         validate_poll(&request)?;
+        self.bind_run(store, server_run_id)?;
         if let PollPreflight::Duplicate(response) =
             self.preflight_poll(&source, &request, server_run_id, now)?
         {
             return Ok(*response);
         }
-        let mut record = self
-            .records
-            .get(&source.id)
-            .cloned()
-            .unwrap_or_else(|| RecoveryRecord::new(&source.id));
+        let mut record = self.record_for_source(&source.id);
         apply_poll(&mut record, &request, now)?;
         let action = maybe_action(&mut record, &source, server_run_id, now);
         let response = PollResponse {
@@ -117,6 +114,9 @@ impl SourceRecoveryManager {
         server_run_id: &str,
         now: u64,
     ) -> Result<PollPreflight> {
+        if self.bound_run_id.as_deref() != Some(server_run_id) {
+            return Err(AppError::Conflict("Recovery engine run is stale.".into()));
+        }
         preflight(
             self.records.get(&source.id).ok_or(AppError::Unauthorized)?,
             request,
@@ -133,20 +133,30 @@ impl SourceRecoveryManager {
         observation: HealthObservation,
         now: u64,
     ) -> Result<()> {
-        let mut record = self
-            .records
-            .get(&source.id)
-            .cloned()
-            .unwrap_or_else(|| RecoveryRecord::new(&source.id));
+        let mut record = self.record_for_source(&source.id);
         apply_observation(&mut record, &source, observation, now);
         persist(store, &record)?;
         self.records.insert(source.id, record);
         Ok(())
     }
+
+    fn record_for_source(&self, source_id: &str) -> RecoveryRecord {
+        self.records.get(source_id).cloned().unwrap_or_else(|| {
+            let mut record = RecoveryRecord::new(source_id);
+            record.server_run_id.clone_from(&self.bound_run_id);
+            record
+        })
+    }
 }
+
+#[path = "source_recovery_scope.rs"]
+mod scope;
 
 #[path = "source_recovery_operator.rs"]
 mod operator;
+#[cfg(test)]
+#[path = "source_recovery_run_tests.rs"]
+mod run_tests;
 #[cfg(test)]
 #[path = "source_recovery_test_support.rs"]
 mod test_support;

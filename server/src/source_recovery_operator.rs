@@ -5,8 +5,7 @@ use crate::{
     error::{AppError, Result},
     source_recovery_state::{cancel, ensure_eligible, persist, status},
     source_recovery_types::{
-        ControllerRecord, LocalDesired, PublisherState, RecoveryPolicy, RecoveryRecord,
-        RecoveryStatus, RetryResult,
+        ControllerRecord, LocalDesired, PublisherState, RecoveryPolicy, RecoveryStatus, RetryResult,
     },
     store::Store,
 };
@@ -20,11 +19,7 @@ impl SourceRecoveryManager {
         policy: RecoveryPolicy,
         now: u64,
     ) -> Result<RecoveryStatus> {
-        let mut record = self
-            .records
-            .get(&source.id)
-            .cloned()
-            .unwrap_or_else(|| RecoveryRecord::new(&source.id));
+        let mut record = self.record_for_source(&source.id);
         if expected != record.policy_version {
             return Err(AppError::Conflict(
                 "Recovery policy version is stale.".into(),
@@ -59,11 +54,7 @@ impl SourceRecoveryManager {
                 "Recovery enrollment requires an enabled SRT source.".into(),
             ));
         }
-        let mut record = self
-            .records
-            .get(&source.id)
-            .cloned()
-            .unwrap_or_else(|| RecoveryRecord::new(&source.id));
+        let mut record = self.record_for_source(&source.id);
         if record.controller.is_some() && !rotate {
             return Err(AppError::Conflict(
                 "Recovery controller is already enrolled; rotate explicitly.".into(),
@@ -107,11 +98,7 @@ impl SourceRecoveryManager {
         source: SourceContext,
         now: u64,
     ) -> Result<RecoveryStatus> {
-        let mut record = self
-            .records
-            .get(&source.id)
-            .cloned()
-            .unwrap_or_else(|| RecoveryRecord::new(&source.id));
+        let mut record = self.record_for_source(&source.id);
         record.controller = None;
         cancel(&mut record);
         persist(store, &record)?;
@@ -129,11 +116,7 @@ impl SourceRecoveryManager {
     ) -> Result<RecoveryStatus> {
         uuid::Uuid::parse_str(request_id)
             .map_err(|_| AppError::Invalid("requestId must be a UUID.".into()))?;
-        let mut record = self
-            .records
-            .get(&source.id)
-            .cloned()
-            .unwrap_or_else(|| RecoveryRecord::new(&source.id));
+        let mut record = self.record_for_source(&source.id);
         if record.retry.request_ids.iter().any(|id| id == request_id) {
             return Ok(status(&record, &source, now));
         }

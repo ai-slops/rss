@@ -7,6 +7,10 @@ repositories:
     branches:
       main: {review: true}
       development: {review: false}
+    upstream:
+      url: https://github.com/ai-slops/rss.git
+      branch: main
+    publish: {main: main}
 policy:
   code-review:
     requiredReviewerIds: []

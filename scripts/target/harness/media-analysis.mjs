@@ -126,7 +126,7 @@ function programToneRatio(powers, tones) {
 
 function assertDominantTone(powers, expectedHz, label) {
   const alternate = expectedHz === 440 ? 880 : 440
-  if (powers[expectedHz] <= Math.max(powers[alternate], powers.noise) * 4) throw new Error(`${label} omitted dominant ${expectedHz} Hz tone`)
+  if (powers[expectedHz] <= Math.max(powers[alternate], powers.noise) * 4) throw new Error(`${label} omitted dominant ${expectedHz} Hz tone: ${JSON.stringify(powers)}`)
 }
 
 function goertzel(samples, frequency) {

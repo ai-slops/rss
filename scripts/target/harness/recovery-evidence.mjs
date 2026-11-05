@@ -33,11 +33,16 @@ export function createProgressTracker(initialReceiver) {
 
 export async function waitForRecoveredMedia(api, sourceId, initialReceiver, predicate = () => true) {
   const tracker = createProgressTracker(initialReceiver)
+  const receiverSamples = []
   let status
   await poll(async () => {
     status = await api.recoveryStatus(sourceId)
+    receiverSamples.push({ time: new Date().toISOString(), receiver: status.receiver, retryResult: status.retry.lastResult })
+    if (receiverSamples.length > 64) receiverSamples.shift()
     return tracker.observe(status.receiver) && predicate(status)
-  }, 30_000, "two healthy same-generation receiver advances")
+  }, 30_000, "two healthy same-generation receiver advances").catch(error => {
+    throw new Error(error.message, { cause: { receiverSamples } })
+  })
   return status
 }
 

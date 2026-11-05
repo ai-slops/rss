@@ -64,6 +64,8 @@ pub struct RecoveryRecord {
     pub controller: Option<ControllerRecord>,
     pub retry: RetryRecord,
     pub receiver: ReceiverRecord,
+    #[serde(default)]
+    pub server_run_id: Option<String>,
 }
 
 impl RecoveryRecord {
@@ -76,6 +78,7 @@ impl RecoveryRecord {
             controller: None,
             retry: RetryRecord::default(),
             receiver: ReceiverRecord::default(),
+            server_run_id: None,
         }
     }
 }

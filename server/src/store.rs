@@ -59,6 +59,19 @@ impl Store {
         Ok(())
     }
 
+    pub(crate) fn plugin_put_batch(
+        &self,
+        namespace: &str,
+        values: &[(String, serde_json::Value)],
+    ) -> anyhow::Result<()> {
+        let transaction = self.db.unchecked_transaction()?;
+        for (key, value) in values {
+            transaction.execute("INSERT INTO plugin_storage(namespace,key,body) VALUES(?1,?2,?3) ON CONFLICT(namespace,key) DO UPDATE SET body=excluded.body", params![namespace, key, serde_json::to_string(value)?])?;
+        }
+        transaction.commit()?;
+        Ok(())
+    }
+
     pub fn destination_put(&self, id: &str, url: &str) -> anyhow::Result<()> {
         self.db.execute(
             "INSERT INTO output_destinations(id,url) VALUES(?1,?2) ON CONFLICT(id) DO UPDATE SET url=excluded.url",

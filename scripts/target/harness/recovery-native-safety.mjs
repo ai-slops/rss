@@ -2,36 +2,43 @@ import assert from "node:assert/strict"
 import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
+import { readFile } from "node:fs/promises"
 import { OwnedProcesses, waitForFile, poll } from "./processes.mjs"
-import { startObs } from "./native-runtime.mjs"
+import { startObs, startServerAt } from "./native-runtime.mjs"
 import { startRecoveryFixture } from "./recovery-native-setup.mjs"
 import { readJson, writePrivateJson } from "./private-files.mjs"
 import { writeRecoveryFaultCommand } from "./recovery-faults.mjs"
 import { waitPluginReport, waitRecoveryStatus, usableReceiver, rawControllerPoll } from "./recovery-native-evidence.mjs"
-import { captureStrictSourceRecording, waitForQuiescentMedia } from "./recovery-evidence.mjs"
+import { captureStrictSourceRecording, waitForQuiescentMedia, updateRecoveryPolicy } from "./recovery-evidence.mjs"
 
 export async function runNativeSafety(options, evidenceDirectory, privateDirectory) {
   const mode = process.env.LIVE_PRODUCTION_RECOVERY_DIAGNOSTIC_MODE
-  if (!["fences", "budget"].includes(mode)) throw new Error("Unsupported native diagnostic mode")
+  if (!["fences", "budget", "controls"].includes(mode)) throw new Error("Unsupported native diagnostic mode")
   const processes = new OwnedProcesses(options.supervisorBinary, { timeoutMs: options.deadlineSeconds * 1000, graceMs: 15000 })
-  let fixture; let commandId = 0; const cases = []
+  let fixture; let memoryBefore; let commandId = 0; const cases = []
   try {
     fixture = await startRecoveryFixture(options, privateDirectory, processes)
     const { server, source, faults, enrollment } = fixture
     await waitForFile(faults.reportFile, 30000, fixture.obs)
     await waitPluginReport(faults.reportFile, value => value.recoveryReady && value.localDesired === "running", 30000)
     await waitRecoveryStatus(server.api, source.id, value => usableReceiver(value.receiver), 30000)
+    memoryBefore = { obs: await memory(fixture.obs.nativePid), server: await memory(server.record.nativePid) }
     try {
       cases.push({ kind: "initialStrictMedia", status: "pass",
         evidence: await captureStrictSourceRecording(server.api, source.id, options.supervisorBinary, "Safety strict media") })
     } catch (error) { cases.push({ kind: "initialStrictMedia", status: "failed", detail: error.message }) }
-    if (mode === "fences") await fences()
-    else await budget()
-    const snapshot = await server.api.snapshot()
+    switch (mode) {
+      case "fences": await fences(); break
+      case "budget": await budget(); break
+      case "controls": await controls(); break
+      default: throw new Error("Unsupported native diagnostic mode")
+    }
+    const snapshot = await fixture.server.api.snapshot()
     assert.equal(snapshot.project.outputs.length, fixture.baseline.outputs)
     assert.equal(snapshot.program.programRevision, fixture.baseline.programRevision)
     const report = { schemaVersion: 1, status: "partial", nativeExecution: true, obsClaim: false,
       diagnosticMode: mode, originalFullGateRequired: true, cases,
+      memoryBefore, memoryAfter: { obs: await memory(fixture.obs.nativePid), server: await memory(fixture.server.record.nativePid) },
       outputCountUnchanged: true, programRevisionUnchanged: true }
     await writePrivateJson(join(evidenceDirectory, "recovery-report.json"), report)
     return report
@@ -89,6 +96,7 @@ export async function runNativeSafety(options, evidenceDirectory, privateDirecto
     assert.equal(offline.capabilities.processRestart, false)
     cases.push({ kind: "deadObsReportedOffline", status: "pass", processRestartClaim: false })
     const replacement = await startObs(processes, options, privateDirectory, "", fixture.display)
+    fixture.obs = replacement
     assert.notEqual(replacement.nativePid, originalPid)
     await delay(2000)
     const stopped = await waitForQuiescentMedia(server.api, source.id)
@@ -96,10 +104,13 @@ export async function runNativeSafety(options, evidenceDirectory, privateDirecto
     cases.push({ kind: "freshObsStaysStopped", status: "pass", oldPid: originalPid, newPid: replacement.nativePid,
       receiver: stopped.receiver })
     const epoch = `${BigInt(stopped.controller.processEpoch ?? "1") + 1n}`
+    const intent = `${BigInt((await readJson(faults.reportFile)).intentEpoch) + 1n}`
     const body = { schemaVersion: 1, controllerId: enrollment.controllerId, processEpoch: epoch,
-      pollSeq: "1", intentEpoch: "1", localDesired: "stopped", publisherState: "stopped", lastAction: null }
+      pollSeq: "1", intentEpoch: intent, localDesired: "running", publisherState: "sending", lastAction: null }
     const registered = await server.api.pollRecovery(source.id, enrollment.controllerToken, body)
     assert.equal(registered.processEpoch, epoch)
+    assert.equal((await server.api.recoveryStatus(source.id)).controller.localDesired, "stopped")
+    assert.equal(registered.action, null)
     const duplicate = await server.api.pollRecovery(source.id, enrollment.controllerToken, body)
     assert.deepEqual(duplicate, registered)
     const raw = async value => fetch(`${server.origin}/api/v1/source-recovery/${source.id}/poll`, { method: "POST",
@@ -107,11 +118,11 @@ export async function runNativeSafety(options, evidenceDirectory, privateDirecto
       body: JSON.stringify(value), redirect: "error" })
     assert.equal((await raw({ ...body, publisherState: "failed" })).status, 409)
     assert.equal((await raw({ ...body, processEpoch: `${BigInt(epoch) - 1n}`, pollSeq: "999" })).status, 409)
-    await server.api.pollRecovery(source.id, enrollment.controllerToken, { ...body, pollSeq: "2", intentEpoch: "2" })
-    assert.equal((await raw(body)).status, 409)
+    await server.api.pollRecovery(source.id, enrollment.controllerToken, { ...body, pollSeq: "2", intentEpoch: `${BigInt(intent) + 1n}`, localDesired: "stopped", publisherState: "stopped" })
+    assert.equal((await raw({ ...body, intentEpoch: `${BigInt(intent) + 1n}`, localDesired: "stopped", publisherState: "stopped" })).status, 409)
     assert.equal((await raw({ ...body, pollSeq: "3" })).status, 409)
     cases.push({ kind: "processPollIntentFencesAndDuplicate", status: "pass", recreatedProcessEpoch: epoch,
-      staleProcess: 409, stalePoll: 409, staleIntent: 409, changedDuplicate: 409, exactDuplicate: "sameResponse" })
+      staleProcess: 409, stalePoll: 409, staleIntent: 409, changedDuplicate: 409, exactDuplicate: "sameResponse", freshProcessCannotArm: true })
     const rotated = await server.api.enrollRecovery(source.id, true)
     assert.notEqual(rotated.controllerId, enrollment.controllerId)
     assert.equal((await rawControllerPoll(server.origin, source.id, enrollment.controllerToken, enrollment.controllerId)).status, 401)
@@ -154,5 +165,60 @@ export async function runNativeSafety(options, evidenceDirectory, privateDirecto
     assert.equal((await readJson(faults.reportFile)).restartExecutionCount, 3)
     cases.push({ kind: "concurrentDuplicateManualRetry", status: "pass", resetBudgetOnce: true, executionsHeld: 3 })
     await stopQueued()
+  }
+
+  async function controls() {
+    let { server } = fixture
+    const { source, faults, bridge } = fixture
+    const initialPlugin = await readJson(faults.reportFile)
+    await issue("reconnectController", "paused", 1000)
+    await waitPluginReport(faults.reportFile, value => BigInt(value.pollSeq) > BigInt(initialPlugin.pollSeq), 10000)
+    cases.push({ kind: "controllerReconnect", status: "pass" })
+    await issue("letControllerLeaseExpire", "paused", 6000)
+    await waitRecoveryStatus(server.api, source.id, value => !value.controller.online, 10000)
+    await waitRecoveryStatus(server.api, source.id, value => value.controller.online, 12000)
+    cases.push({ kind: "controllerLeaseOfflineThenOnline", status: "pass", processRestartClaim: false })
+    await updateRecoveryPolicy(server.api, source.id, { maintenance: true })
+    const before = await readJson(faults.reportFile)
+    const attempts = (await server.api.recoveryStatus(source.id)).retry.attempts
+    bridge.pauseData()
+    await waitRecoveryStatus(server.api, source.id, value => value.controller.online && value.receiver.state === "stalled", 12000)
+    await delay(1000)
+    assert.equal((await readJson(faults.reportFile)).restartExecutionCount, before.restartExecutionCount)
+    assert.equal((await server.api.recoveryStatus(source.id)).retry.attempts, attempts)
+    cases.push({ kind: "maintenanceSuppressesRecovery", status: "pass", attempts, executions: before.restartExecutionCount })
+    bridge.resumeData()
+    await waitRecoveryStatus(server.api, source.id, value => value.receiver.state === "healthy", 12000)
+    let snapshot = await server.api.snapshot()
+    const current = snapshot.project.sources.find(value => value.id === source.id)
+    await server.api.command("source.configure", source.id, { source: { ...current, enabled: false } }, { snapshot, expectedRevision: snapshot.project.revision })
+    assert.equal((await server.api.recoveryStatus(source.id)).receiver.state, "source_disabled")
+    await updateRecoveryPolicy(server.api, source.id, { maintenance: false })
+    await delay(3500)
+    assert.equal((await readJson(faults.reportFile)).restartExecutionCount, before.restartExecutionCount)
+    assert.equal((await server.api.recoveryStatus(source.id)).retry.attempts, attempts)
+    cases.push({ kind: "sourceDisabledSuppressesRecovery", status: "pass", attempts, maintenanceAlsoEnabled: false })
+    await updateRecoveryPolicy(server.api, source.id, { maintenance: true })
+    snapshot = await server.api.snapshot()
+    const disabled = snapshot.project.sources.find(value => value.id === source.id)
+    await server.api.command("source.configure", source.id, { source: { ...disabled, enabled: true } }, { snapshot, expectedRevision: snapshot.project.revision })
+    const oldRun = (await server.api.snapshot()).engineRunId
+    const oldPlugin = await readJson(faults.reportFile)
+    await processes.stop(server.record)
+    server = await startServerAt(processes, options, privateDirectory, fixture.password, "safety-restarted", server.stateDirectory, server.port)
+    fixture.server = server
+    assert.notEqual((await server.api.snapshot()).engineRunId, oldRun)
+    await waitPluginReport(faults.reportFile, value => BigInt(value.pollSeq) > BigInt(oldPlugin.pollSeq), 20000)
+    await waitRecoveryStatus(server.api, source.id, value => value.controller.online, 20000)
+    assert.equal((await server.api.recoveryStatus(source.id)).retry.attempts, attempts)
+    assert.equal((await readJson(faults.reportFile)).restartExecutionCount, oldPlugin.restartExecutionCount)
+    cases.push({ kind: "serverRestartFencesStaleActions", status: "pass", maintenanceEnabled: true, retryAttemptsPreserved: attempts })
+    await issue("manualStopAfterQueuedRestart", "executed")
+    await waitForQuiescentMedia(server.api, source.id)
+  }
+
+  async function memory(pid) {
+    const status = await readFile(`/proc/${pid}/status`, "utf8")
+    return { pid, rssKiB: Number(status.match(/^VmRSS:\s+(\d+)/mu)?.[1]), peakRssKiB: Number(status.match(/^VmHWM:\s+(\d+)/mu)?.[1]) }
   }
 }

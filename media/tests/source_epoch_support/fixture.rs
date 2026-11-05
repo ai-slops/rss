@@ -79,7 +79,7 @@ pub fn wait_admission(added: &EngineEvent, active: bool, generation: u64) -> any
 
 pub fn sender(port: u16, color: u32, frequency: u32) -> anyhow::Result<PipelineGuard> {
     let description = format!(
-        "mpegtsmux name=mux ! srtsink uri=\"srt://127.0.0.1:{port}?mode=caller&passphrase={PASSPHRASE}&pbkeylen=16\" wait-for-connection=false auto-reconnect=false videotestsrc is-live=true pattern=solid-color foreground-color={color} ! video/x-raw,width=640,height=360,framerate=30/1 ! x264enc tune=zerolatency key-int-max=30 ! h264parse config-interval=-1 ! mux. audiotestsrc is-live=true wave=sine freq={frequency} ! audio/x-raw,rate=48000,channels=1 ! voaacenc ! aacparse ! mux."
+        "mpegtsmux name=mux alignment=7 ! srtsink uri=\"srt://127.0.0.1:{port}?mode=caller&passphrase={PASSPHRASE}&pbkeylen=16\" wait-for-connection=false auto-reconnect=false videotestsrc is-live=true pattern=solid-color foreground-color={color} ! video/x-raw,width=640,height=360,framerate=30/1 ! x264enc tune=zerolatency key-int-max=30 ! h264parse config-interval=-1 ! mux. audiotestsrc is-live=true wave=sine freq={frequency} ! audio/x-raw,rate=48000,channels=1 ! voaacenc ! aacparse ! mux."
     );
     Ok(PipelineGuard(
         gst::parse::launch(&description)?

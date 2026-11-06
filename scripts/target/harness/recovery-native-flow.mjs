@@ -56,7 +56,7 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
     await bridge.retirePreviousPeer()
     const strictMedia = await captureStrictSourceRecording(server.api, source.id, options.supervisorBinary,
       "Recovery OBS strict clean")
-    faultMatrix.push({ kind: "bridgeDataDrop", result: "recoveredUsableAv",
+    faultMatrix.push({ kind: "bridgeDataDrop", mechanism: "loopbackSrtDataPause", result: "recoveredUsableAv",
       videoFrames: recovered.receiver.videoFrames, audioBuffers: recovered.receiver.audioBuffers,
       continuityGenerationBefore: healthy.receiver.continuityGeneration,
       continuityGenerationAfter: recovered.receiver.continuityGeneration,
@@ -75,7 +75,7 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
     faultMatrix.push({ kind: "redeliverDuplicateAction", result: "sameOutcomeNoAdditionalExecution",
       commandId: plugin.duplicateCommandId, outcome: plugin.duplicateResult })
 
-    if (!omissions.includes("freezePublisher")) {
+    if (!omissions.includes("receiverDataFreeze")) {
       phase = "receiverDataFreeze"
       await issue(faults, ++commandId, "pauseActionDispatch", "paused")
       const beforeFreezeCount = number(plugin.restartExecutionCount)
@@ -97,7 +97,7 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
         (status) => status.receiver.continuityGeneration !== beforeFreezeReceiver.continuityGeneration)
       await bridge.retirePreviousPeer()
       plugin = await readJson(faults.reportFile)
-      faultMatrix.push({ kind: "receiverDataFreeze", result: "dataPausedControllerOnlineRecovered",
+      faultMatrix.push({ kind: "receiverDataFreeze", mechanism: "loopbackSrtDataPause", independentFaultMechanism: false, result: "dataPausedControllerOnlineRecovered",
         droppedDatagrams: bridge.stats().droppedData - beforeFreezeDrops,
         restartExecutionsBefore: beforeFreezeCount, restartExecutionsAfter: number(plugin.restartExecutionCount),
         generationBefore: beforeFreezeReceiver.continuityGeneration,

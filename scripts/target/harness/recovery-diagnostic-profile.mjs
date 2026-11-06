@@ -1,5 +1,5 @@
 export function diagnosticOmissions(value = "") {
-  const allowed = new Set(["freezePublisher", "obsProcessSigstop"])
+  const allowed = new Set(["receiverDataFreeze", "obsProcessSigstop"])
   const omitted = value === "" ? [] : value.split(",")
   if (omitted.some(kind => !allowed.has(kind)) || new Set(omitted).size !== omitted.length) {
     throw new Error("Diagnostic omissions must name distinct supported native cases")

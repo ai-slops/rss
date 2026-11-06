@@ -30,8 +30,8 @@ gate media-inspection "$SUP" --timeout-ms 120000 --grace-ms 5000 -- node scripts
 gate recovery-local "$SUP" --timeout-ms 180000 --grace-ms 10000 -- node --test scripts/target/recovery-local.driver.test.mjs
 gate obs-rehearsal scripts/target/rehearsal.sh --plugin-dir "$ROOT/var/obs-plugin-stage" --evidence-dir "$ROOT/var/obs-completion-02" --server-binary "$ROOT/target/release/live-production" --supervisor-binary "$ROOT/target/release/live-production-supervisor" --obs-binary /usr/bin/obs --deadline-seconds 120
 gate recovery-full recovery recovery-completion-02
-gate recovery-after-freeze env LIVE_PRODUCTION_RECOVERY_DIAGNOSTIC_OMIT=freezePublisher bash -c 'recovery recovery-completion-03'
-gate recovery-later-cases env LIVE_PRODUCTION_RECOVERY_DIAGNOSTIC_OMIT=freezePublisher,obsProcessSigstop bash -c 'recovery recovery-completion-04'
+gate recovery-after-freeze env LIVE_PRODUCTION_RECOVERY_DIAGNOSTIC_OMIT=receiverDataFreeze bash -c 'recovery recovery-completion-03'
+gate recovery-later-cases env LIVE_PRODUCTION_RECOVERY_DIAGNOSTIC_OMIT=receiverDataFreeze,obsProcessSigstop bash -c 'recovery recovery-completion-04'
 gate recovery-fences env LIVE_PRODUCTION_RECOVERY_DIAGNOSTIC_MODE=fences bash -c 'recovery recovery-completion-05'
 gate recovery-budget env LIVE_PRODUCTION_RECOVERY_DIAGNOSTIC_MODE=budget bash -c 'recovery recovery-completion-06'
 gate rust-workspace env LIVE_PRODUCTION_PROVENANCE_EVIDENCE_DIR="$ROOT/var/completion-02/full-suite-provenance" "$SUP" --timeout-ms 900000 --grace-ms 10000 -- cargo test --locked --no-fail-fast --workspace -- --test-threads=1

@@ -118,7 +118,7 @@ private:
           next_video = now + video_interval;
       }
       if (now >= next_audio) {
-        output_audio(next_audio);
+        output_audio(next_audio - start);
         next_audio += audio_interval;
         if (next_audio + audio_interval * 4 < now)
           next_audio = now + audio_interval;
@@ -196,7 +196,13 @@ obs_source_t *create_fixture_source(const FixtureSourceCommand &command,
     return nullptr;
   }
   obs_source_set_audio_mixers(source, 1u << command.audio_mix_index);
+  obs_source_inc_active(source);
   return source;
+}
+
+void release_fixture_source(obs_source_t *source) {
+  obs_source_dec_active(source);
+  obs_source_release(source);
 }
 
 }

@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { randomBytes } from "node:crypto"
 import test from "node:test"
+import { setTimeout as delay } from "node:timers/promises"
 import { startServer } from "./harness/native-runtime.mjs"
 import { OwnedProcesses, freeUdpPort, poll } from "./harness/processes.mjs"
 import { captureStrictSourceRecording, createProgressTracker, updateRecoveryPolicy, waitForQuiescentMedia } from "./harness/recovery-evidence.mjs"
@@ -65,7 +66,22 @@ test("real server recovery API restarts synthetic SRT media without output or Pr
         && status.receiver.continuityGeneration !== healthy.receiver.continuityGeneration)
     assert(numeric(progressed.receiver.lastVideoPtsNs) > numeric(healthy.receiver.lastVideoPtsNs))
     await bridge.retirePreviousPeer()
-    const strictMedia = await captureStrictSourceRecording(server.api, source.id, supervisorBinary)
+    let captureComplete = false; let leaseError; let strictMedia
+    const controllerLease = (async () => {
+      while (!captureComplete) {
+        sequence.value += 1
+        await server.api.pollRecovery(source.id, enrollment.controllerToken,
+          request(enrollment.controllerId, sequence.value, { intentEpoch: "2", localDesired: "running", publisherState: "sending" }))
+        await delay(200)
+      }
+    })().catch(error => { leaseError = error })
+    try {
+      strictMedia = await captureStrictSourceRecording(server.api, source.id, supervisorBinary)
+    } finally {
+      captureComplete = true
+      await controllerLease
+      if (leaseError !== undefined) throw leaseError
+    }
 
     processes.signalNative(sender, "SIGKILL"); await processes.wait(sender); sender = null
     const drop = await waitAction(server.api, source.id, enrollment, sequence)

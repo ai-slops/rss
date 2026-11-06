@@ -4,7 +4,11 @@ pub fn preserve(source: &Path, label: &str) -> anyhow::Result<()> {
     let Some(root) = std::env::var_os("LIVE_PRODUCTION_MEDIA_EVIDENCE_DIR") else {
         return Ok(());
     };
-    let destination = std::path::PathBuf::from(root).join(label);
+    use std::os::unix::fs::PermissionsExt;
+    let root = std::path::PathBuf::from(root);
+    fs::create_dir_all(&root)?;
+    fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
+    let destination = root.join(label);
     fs::create_dir_all(
         destination
             .parent()
@@ -26,7 +30,8 @@ fn copy_directory(source: &Path, destination: &Path) -> anyhow::Result<()> {
             fs::create_dir(&target)?;
             copy_directory(&entry.path(), &target)?;
         } else if entry.file_type()?.is_file() {
-            fs::copy(entry.path(), target)?;
+            fs::copy(entry.path(), &target)?;
+            fs::set_permissions(target, fs::Permissions::from_mode(0o600))?;
         }
     }
     Ok(())

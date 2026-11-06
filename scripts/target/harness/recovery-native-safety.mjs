@@ -101,7 +101,7 @@ export async function runNativeSafety(options, evidenceDirectory, privateDirecto
     await delay(2000)
     const stopped = await waitForQuiescentMedia(server.api, source.id)
     assert.equal(stopped.controller.localDesired, "stopped")
-    cases.push({ kind: "freshObsStaysStopped", status: "pass", oldPid: originalPid, newPid: replacement.nativePid,
+    cases.push({ kind: "freshObsNoBackendMediaResume", status: "pass", pluginStoppedUiClaim: false, oldPid: originalPid, newPid: replacement.nativePid,
       receiver: stopped.receiver })
     const epoch = `${BigInt(stopped.controller.processEpoch ?? "1") + 1n}`
     const intent = `${BigInt((await readJson(faults.reportFile)).intentEpoch) + 1n}`
@@ -147,7 +147,7 @@ export async function runNativeSafety(options, evidenceDirectory, privateDirecto
     for (let index = 0; index < observed.length; index++) {
       const sample = observed[index]
       const remainingNs = BigInt(sample.nextEligibleAtNs) - BigInt(sample.timeMs) * 1000000n
-      assert(remainingNs > 0n && remainingNs <= BigInt(2 ** index) * 1000000000n + 100000000n)
+      assertNativeBackoff(index + 1, remainingNs)
       const following = observed[index + 1] ?? timeline.at(-1)
       assert(BigInt(following.timeMs) * 1000000n >= BigInt(sample.nextEligibleAtNs) - 100000000n)
     }
@@ -221,4 +221,9 @@ export async function runNativeSafety(options, evidenceDirectory, privateDirecto
     const status = await readFile(`/proc/${pid}/status`, "utf8")
     return { pid, rssKiB: Number(status.match(/^VmRSS:\s+(\d+)/mu)?.[1]), peakRssKiB: Number(status.match(/^VmHWM:\s+(\d+)/mu)?.[1]) }
   }
+}
+
+export function assertNativeBackoff(attempt, remainingNs) {
+  const expected = BigInt(2 ** (attempt - 1)) * 1000000000n
+  assert(remainingNs >= expected - 500000000n && remainingNs <= expected + 100000000n)
 }

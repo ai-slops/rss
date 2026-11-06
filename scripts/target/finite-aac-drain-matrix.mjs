@@ -5,6 +5,7 @@ import { setTimeout as delay } from "node:timers/promises"
 import { ensureSupervised } from "../runner-supervision.mjs"
 import { OwnedProcesses, freeUdpPort, poll } from "./harness/processes.mjs"
 import { runSupervised } from "./harness/media-analysis.mjs"
+import { finiteTransferComplete } from "./harness/finite-drain-evidence.mjs"
 
 await ensureSupervised()
 const root = resolve(new URL("../..", import.meta.url).pathname)
@@ -20,7 +21,7 @@ for (const load of [false, true]) {
   }
 }
 process.exitCode = results.some(value => !value.source.strictDecoded || value.profile.drainNs > 0
-  && (!value.receiver.strictDecoded || Number(value.receiver.frames.find(stream => stream.kind === "video")?.frames) !== 150)) ? 1 : 0
+  && !finiteTransferComplete(value.source, value.receiver)) ? 1 : 0
 
 async function execute(load, profile) {
   const label = `${load ? "loaded" : "idle"}-sender-${profile.drainNs}-receiver-${profile.receiverDelayMs}`

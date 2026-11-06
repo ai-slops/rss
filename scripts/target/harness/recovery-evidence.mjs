@@ -73,6 +73,7 @@ export async function captureStrictSourceRecording(api, sourceId, supervisorBina
   snapshot = await api.snapshot()
   const output = snapshot.project.outputs.find((candidate) => candidate.name === name)
   if (output === undefined) throw new Error("Strict recovery recording output was not created")
+  const receiverBefore = (await api.recoveryStatus(sourceId)).receiver
   await api.command("output.start", output.id, {}, { snapshot })
   await new Promise((resolve) => setTimeout(resolve, 4_000))
   snapshot = await api.snapshot(); await api.command("output.stop", output.id, {}, { snapshot })
@@ -82,7 +83,10 @@ export async function captureStrictSourceRecording(api, sourceId, supervisorBina
       snapshot.recordings.filter((recording) => recording.outputId === output.id),
       { label: name, profile: { width: 1280, height: 720 },
         content: { kind: "clean", label: name, color: "red", toneHz: 440 } }, supervisorBinary)
-    return { segments: analyzed.segments.length, content: analyzed.content,
+    const durationSeconds = analyzed.segments.reduce((sum, segment) => sum + segment.durationSeconds, 0)
+    if (!Number.isFinite(durationSeconds) || durationSeconds < 3) throw new Error("Strict recovery recording yielded less than three seconds of decoded media")
+    await waitForRecoveredMedia(api, sourceId, receiverBefore, status => status.receiver.continuityGeneration === receiverBefore.continuityGeneration)
+    return { segments: analyzed.segments.length, durationSeconds, content: analyzed.content,
       video: analyzed.segments[0].video, audio: analyzed.segments[0].audio }
   } finally {
     snapshot = await api.snapshot(); await api.command("output.delete", output.id, {}, { snapshot })

@@ -2,7 +2,6 @@ import assert from "node:assert/strict"
 import { join } from "node:path"
 import { readJson, writePrivateJson } from "./private-files.mjs"
 import { OwnedProcesses, waitForFile } from "./processes.mjs"
-import { startServerAt } from "./native-runtime.mjs"
 import { writeRecoveryFaultCommand } from "./recovery-faults.mjs"
 import { captureStrictSourceRecording, updateRecoveryPolicy, waitForRecoveredMedia } from "./recovery-evidence.mjs"
 import { startRecoveryFixture } from "./recovery-native-setup.mjs"
@@ -11,6 +10,7 @@ import { runNativeSafety } from "./recovery-native-safety.mjs"
 import { assertProgramPreserved } from "./program-content-fence.mjs"
 import { runRequiredPublisherFreeze } from "./recovery-publisher-freeze.mjs"
 import { stopQueuedRecovery } from "./recovery-queued-stop.mjs"
+import { restartRecoveryDaemon } from "./recovery-daemon-restart.mjs"
 import { numeric as number, rawControllerPoll as rawPoll, usableReceiver as usable,
   waitPluginReport as waitReport, waitRecoveryStatus as waitStatus } from "./recovery-native-evidence.mjs"
 
@@ -146,25 +146,10 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
     faultMatrix.push({ kind: "pollWrongSourceAuthorization", result: "http401" })
 
     await issue(faults, ++commandId, "observeServerRestart", "awaitingHttpEvidence")
-    const beforeRestartStatus = await server.api.recoveryStatus(source.id)
-    const beforeRestartPlugin = await readJson(faults.reportFile)
-    const stateDirectory = server.stateDirectory; const serverPort = server.port
-    const beforeRestartSnapshot = await server.api.snapshot()
-    assert.equal(beforeRestartSnapshot.engineRunId, baseline.snapshot.engineRunId)
-    assertProgramPreserved(baseline.snapshot, beforeRestartSnapshot)
-    await processes.stop(server.record)
-    server = await startServerAt(processes, options, privateDirectory, password,
-      "recovery-restarted", stateDirectory, serverPort)
-    const restartedStatus = await waitStatus(server.api, source.id, (status) => status.controller.enrolled === true, 20_000)
-    assert.equal(restartedStatus.retry.attempts, beforeRestartStatus.retry.attempts)
-    plugin = await waitReport(faults.reportFile,
-      (report) => number(report.pollSeq) > number(beforeRestartPlugin.pollSeq), 20_000)
-    assert.equal(number(plugin.restartExecutionCount), number(beforeRestartPlugin.restartExecutionCount))
-    restartedProgramBaseline = await server.api.snapshot()
-    assert.notEqual(restartedProgramBaseline.engineRunId, beforeRestartSnapshot.engineRunId)
-    assertProgramPreserved(baseline.snapshot, restartedProgramBaseline)
-    faultMatrix.push({ kind: "observeServerRestart", result: "controllerPersisted",
-      attempts: restartedStatus.retry.attempts, staleActionExecutions: 0 })
+    const restart = await restartRecoveryDaemon({ server, source, faults, bridge, processes,
+      options, privateDirectory, password, baseline })
+    server = restart.server; restartedProgramBaseline = restart.snapshot
+    faultMatrix.push(restart.evidence)
 
     phase = "controllerReconnect"
     await issue(faults, ++commandId, "reconnectController", "paused", 1_000)

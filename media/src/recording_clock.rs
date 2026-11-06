@@ -17,6 +17,24 @@ pub struct RecordingClock {
 }
 
 impl RecordingClock {
+    pub fn source_capture(
+        anchor: &EngineClockMapping,
+        engine_run_id: Option<String>,
+        provenance: Arc<ProvenanceCollector>,
+    ) -> Self {
+        Self {
+            engine_run_id,
+            media_origin_ns: anchor.media_time.value(),
+            uncertainty_ns: anchor.uncertainty.value(),
+            corrections: Arc::new(Mutex::new(Some((0, 0)))),
+            provenance,
+        }
+    }
+
+    pub const fn set_media_origin(&mut self, media_origin_ns: u64) {
+        self.media_origin_ns = media_origin_ns;
+    }
+
     pub fn sample(
         pipeline: &gst::Pipeline,
         anchor: &EngineClockMapping,

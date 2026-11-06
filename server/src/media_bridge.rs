@@ -51,6 +51,13 @@ impl MediaBridge {
         &self.engine_run_id
     }
 
+    pub(crate) fn source_capture(
+        &self,
+        channels: &live_production_media::tap::TapChannels,
+    ) -> live_production_media::output::SourceCapture {
+        self.engine.source_capture(channels)
+    }
+
     pub(crate) fn execute_kind(
         &self,
         command_id_value: &str,

@@ -84,6 +84,7 @@ impl Owner {
                         store: &store,
                         state_directory: &state_directory,
                         engine_run_id: media.typed_engine_run_id(),
+                        media: &media,
                     });
                 OutputStatus {
                     output_id: output.id.clone(),

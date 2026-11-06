@@ -118,6 +118,7 @@ bool Publisher::initialize(std::string &error) {
 }
 
 bool Publisher::start(std::string &error) {
+  transport_fault_ = std::make_unique<PublisherTransportFault>();
   if (obs_output_start(output_))
     return true;
   error = "OBS rejected output start; inspect local OBS logs privately";
@@ -126,8 +127,18 @@ bool Publisher::start(std::string &error) {
 }
 
 void Publisher::stop() {
+  resume_transport();
   if (output_ && obs_output_active(output_))
     obs_output_stop(output_);
+}
+
+bool Publisher::freeze_transport() {
+  return output_ && obs_output_active(output_) && transport_fault_ &&
+         transport_fault_->freeze();
+}
+
+void Publisher::resume_transport() {
+  if (transport_fault_) (void)transport_fault_->resume();
 }
 
 std::string Publisher::state() const {

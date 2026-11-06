@@ -1,5 +1,9 @@
 # Remaining verification and recovery run binding
 
+Historical receipt: subsequent native failure corrections and replay requirements
+are recorded in [native production corrections](native-production-corrections-2026-11-06.md).
+The failures retained below are not erased or converted into passes.
+
 ## Delivery boundary
 
 This is a local correction on `work/remaining-verification-20261105`, based on

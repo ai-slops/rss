@@ -25,10 +25,12 @@ add_library(obs-live-production MODULE
   src/plugin.cpp
   src/publisher.cpp
   src/publisher_runtime.cpp
+  src/publisher_transport_fault.cpp
   src/recovery_action.cpp
   src/recovery_client.cpp
   src/recovery_fault.cpp
   src/recovery_fixture.cpp
+  src/recovery_fixture_commands.cpp
   src/recovery_model.cpp
   src/recovery_protocol.cpp
   src/recovery_store.cpp
@@ -50,6 +52,24 @@ target_link_libraries(obs-live-production PRIVATE
 set_target_properties(obs-live-production PROPERTIES PREFIX "")
 
 if(BUILD_TESTING)
+  add_executable(obs-live-production-fixture-audio-test
+    tests/fixture_audio_test.cpp src/fixture_source.cpp)
+  target_compile_features(obs-live-production-fixture-audio-test PRIVATE cxx_std_17)
+  target_compile_options(obs-live-production-fixture-audio-test PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>)
+  target_include_directories(obs-live-production-fixture-audio-test PRIVATE src)
+  target_link_libraries(obs-live-production-fixture-audio-test PRIVATE OBS::libobs Threads::Threads)
+  add_test(NAME obs-live-production-fixture-audio-test COMMAND obs-live-production-fixture-audio-test)
+  set_tests_properties(obs-live-production-fixture-audio-test PROPERTIES TIMEOUT 20)
+  add_executable(obs-live-production-publisher-transport-fault-test
+    tests/publisher_transport_fault_test.cpp src/publisher_transport_fault.cpp)
+  target_compile_features(obs-live-production-publisher-transport-fault-test PRIVATE cxx_std_17)
+  target_compile_options(obs-live-production-publisher-transport-fault-test PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>)
+  target_include_directories(obs-live-production-publisher-transport-fault-test PRIVATE src)
+  target_link_libraries(obs-live-production-publisher-transport-fault-test PRIVATE Threads::Threads)
+  add_test(NAME obs-live-production-publisher-transport-fault-test COMMAND obs-live-production-publisher-transport-fault-test)
+  set_tests_properties(obs-live-production-publisher-transport-fault-test PROPERTIES TIMEOUT 30)
   add_executable(obs-live-production-srt-url-test
     tests/srt_url_test.cpp
     src/srt_url.cpp
@@ -180,6 +200,7 @@ if(BUILD_TESTING)
     src/module_runtime_poll.cpp
     src/publisher.cpp
     src/publisher_runtime.cpp
+    src/publisher_transport_fault.cpp
     src/recovery_action.cpp
     src/recovery_client.cpp
     src/recovery_model.cpp

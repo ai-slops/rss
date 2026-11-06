@@ -196,7 +196,31 @@ obs_source_t *create_fixture_source(const FixtureSourceCommand &command,
     return nullptr;
   }
   obs_source_set_audio_mixers(source, 1u << command.audio_mix_index);
-  return source;
+  // AUX_VIEW renders video but is not an audio root in libobs. Tally/activation
+  // alone cannot put these private tones into obs_get_audio()'s encoder mix.
+  // Claim only an empty main-view channel; never replace a user output source.
+  for (uint32_t channel = 1; channel < MAX_CHANNELS; ++channel) {
+    obs_source_t *existing = obs_get_output_source(channel);
+    if (existing) {
+      obs_source_release(existing);
+      continue;
+    }
+    obs_set_output_source(channel, source);
+    return source;
+  }
+  error = "native fixture has no unused audio root channel";
+  obs_source_release(source);
+  return nullptr;
+}
+
+void release_fixture_source(obs_source_t *source) {
+  if (!source) return;
+  for (uint32_t channel = 1; channel < MAX_CHANNELS; ++channel) {
+    obs_source_t *existing = obs_get_output_source(channel);
+    if (existing == source) obs_set_output_source(channel, nullptr);
+    if (existing) obs_source_release(existing);
+  }
+  obs_source_release(source);
 }
 
 }

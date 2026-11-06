@@ -1,12 +1,11 @@
-use std::{sync::Arc, time::Instant};
+use std::time::Instant;
 
 use crate::engine_owner::{OwnerState, now_nanoseconds};
 use crate::engine_source_graph::validate_source;
-use crate::engine_source_runtime::SourceRuntime;
+use crate::engine_source_runtime::{SourceBuild, SourceBuildContext, SourceRuntime};
 use crate::protocol::{
     ContinuityGeneration, EventKind, GapTimebase, SourceGap, SourceId, SourceSnapshot, SourceSpec,
 };
-use crate::tap::TapChannels;
 
 impl OwnerState {
     pub(super) fn shutdown_sources(&mut self) {
@@ -18,6 +17,7 @@ impl OwnerState {
             self.unregister_source_tracks(&runtime);
             let _ = runtime.detach(&self.pipeline);
         }
+        self.source_captures.shutdown();
     }
 
     pub(super) fn maintain_sources(&mut self) {
@@ -47,13 +47,11 @@ impl OwnerState {
                 reason: format!("source '{}' already exists", spec.id.as_str()),
             };
         }
-        match SourceRuntime::build(
-            &self.pipeline,
-            &self.engine_run_id,
-            spec.clone(),
-            1,
-            Vec::new(),
-        ) {
+        match self.build_source(SourceBuild {
+            spec: spec.clone(),
+            generation: 1,
+            gaps: Vec::new(),
+        }) {
             Ok(runtime) => {
                 self.register_source_tracks(&runtime);
                 self.sources.insert(spec.id.clone(), runtime);
@@ -70,8 +68,16 @@ impl OwnerState {
             };
         };
         self.unregister_source_tracks(&runtime);
+        let channels = crate::tap::TapChannels::clean(
+            &self.engine_run_id,
+            &runtime.spec.video_track_id,
+            &runtime.spec.audio_track_id,
+        );
         match runtime.detach(&self.pipeline) {
-            Ok(()) => self.applied(false),
+            Ok(()) => {
+                self.source_captures.close(&channels);
+                self.applied(false)
+            }
             Err(reason) => EventKind::Failed { reason },
         }
     }
@@ -123,13 +129,11 @@ impl OwnerState {
         if let Err(reason) = previous.detach(&self.pipeline) {
             return EventKind::Failed { reason };
         }
-        match SourceRuntime::build(
-            &self.pipeline,
-            &self.engine_run_id,
-            spec.clone(),
+        match self.build_source(SourceBuild {
+            spec: spec.clone(),
             generation,
-            gaps.clone(),
-        ) {
+            gaps: gaps.clone(),
+        }) {
             Ok(runtime) => {
                 runtime.video_timing_control.set_offset(video_offset);
                 runtime.audio_timing_control.set_offset(audio_offset);
@@ -138,13 +142,11 @@ impl OwnerState {
                 self.applied(true)
             }
             Err(reason) => {
-                if let Ok(runtime) = SourceRuntime::build(
-                    &self.pipeline,
-                    &self.engine_run_id,
-                    previous_spec,
+                if let Ok(runtime) = self.build_source(SourceBuild {
+                    spec: previous_spec,
                     generation,
                     gaps,
-                ) {
+                }) {
                     runtime.video_timing_control.set_offset(video_offset);
                     runtime.audio_timing_control.set_offset(audio_offset);
                     self.register_source_tracks(&runtime);
@@ -177,9 +179,11 @@ impl OwnerState {
         if previous.detach(&self.pipeline).is_err() {
             return;
         }
-        let Ok(runtime) =
-            SourceRuntime::build(&self.pipeline, &self.engine_run_id, spec, generation, gaps)
-        else {
+        let Ok(runtime) = self.build_source(SourceBuild {
+            spec,
+            generation,
+            gaps,
+        }) else {
             return;
         };
         runtime.video_timing_control.set_offset(video_offset);
@@ -200,58 +204,14 @@ impl OwnerState {
         snapshots
     }
 
-    fn register_source_tracks(&mut self, runtime: &SourceRuntime) {
-        self.tracks.insert(
-            runtime.spec.video_track_id.clone(),
-            runtime.video_timing_name.clone(),
-        );
-        self.tracks.insert(
-            runtime.spec.audio_track_id.clone(),
-            runtime.audio_timing_name.clone(),
-        );
-        self.track_history.insert(
-            runtime.spec.video_track_id.clone(),
-            runtime.video_history_name.clone(),
-        );
-        self.timing_controls.insert(
-            runtime.spec.video_track_id.clone(),
-            Arc::clone(&runtime.video_timing_control),
-        );
-        self.timing_controls.insert(
-            runtime.spec.audio_track_id.clone(),
-            Arc::clone(&runtime.audio_timing_control),
-        );
-        self.track_history.insert(
-            runtime.spec.audio_track_id.clone(),
-            runtime.audio_history_name.clone(),
-        );
-        self.video_tees.insert(
-            runtime.spec.video_track_id.clone(),
-            TapChannels::source(
-                &self.engine_run_id,
-                &runtime.spec.video_track_id,
-                &runtime.spec.audio_track_id,
-            )
-            .video,
-        );
-        if let Some(audio_mix) = &runtime.audio_mix {
-            if let Some(route) = self.mix_settings.get(&runtime.spec.audio_track_id) {
-                audio_mix.restore_mix(route);
-            }
-            self.audio_routes.insert(
-                runtime.spec.audio_track_id.clone(),
-                audio_mix.mixer_pad_name(),
-            );
-        }
-    }
-
-    fn unregister_source_tracks(&mut self, runtime: &SourceRuntime) {
-        for track_id in [&runtime.spec.video_track_id, &runtime.spec.audio_track_id] {
-            self.tracks.remove(track_id);
-            self.track_history.remove(track_id);
-            self.timing_controls.remove(track_id);
-            self.video_tees.remove(track_id);
-            self.audio_routes.remove(track_id);
-        }
+    fn build_source(&self, build: SourceBuild) -> Result<SourceRuntime, String> {
+        SourceRuntime::build(
+            &SourceBuildContext {
+                pipeline: &self.pipeline,
+                engine_run_id: &self.engine_run_id,
+                source_captures: &self.source_captures,
+            },
+            build,
+        )
     }
 }

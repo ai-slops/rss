@@ -1,23 +1,24 @@
 use std::time::Duration;
 
 use live_production_media::output::{
-    DestinationUrl, MediaTap, OutputDefinition, OutputId, OutputManager, RecordingDefinition,
+    DestinationUrl, MediaTap, OutputDefinition, OutputId, RecordingDefinition,
 };
 
 use crate::{
     error::{AppError, Result},
-    model::{Output, OutputAdapter, Project, TrackKind},
-    store::Store,
+    model::{OutputAdapter, TrackKind},
 };
 
-pub(crate) fn register(
-    manager: &OutputManager,
-    output: &Output,
-    project: &Project,
-    store: &Store,
-    state_directory: &std::path::Path,
-    engine_run_id: &live_production_media::protocol::EngineRunId,
-) -> Result<()> {
+pub(crate) fn register(request: crate::plugins_factories::OutputFactoryRequest<'_>) -> Result<()> {
+    let crate::plugins_factories::OutputFactoryRequest {
+        manager,
+        output,
+        project,
+        store,
+        state_directory,
+        engine_run_id,
+        media,
+    } = request;
     let id = OutputId::new(&output.id.0).map_err(invalid)?;
     let definition = match &output.adapter {
         OutputAdapter::ProgramRecording { segment_seconds } => OutputDefinition::Recording(
@@ -66,7 +67,7 @@ pub(crate) fn register(
                 )
                 .map_err(invalid)?
                 .with_engine_run_id(engine_run_id)
-                .with_source_provenance(),
+                .with_source_capture(media.source_capture(&channels)),
             )
         }
         OutputAdapter::Rtmps { destination_id } => {

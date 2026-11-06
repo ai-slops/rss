@@ -105,12 +105,18 @@ the plugin report labels them `serverDirected` rather than inventing outcomes.
 maintenance and source-disable are labelled `awaitingHttpEvidence`; they are
 not reported verified until the harness supplies actual HTTP/server evidence.
 
-`freezePublisher` is an external transport fault. The native harness owns a
-loopback UDP proxy that drops SRT DATA packets (control bit clear) while still
-forwarding SRT control traffic and HTTP recovery polls. This stalls decoded
-media without relying on pixel hashes or pausing the fixture source while OBS
-continues rendering repeated frames/silence. The plugin reports
-`externalProcessRequired` because it does not own that proxy.
+On Linux, `freezePublisher` now SIGSTOPs the independent publisher's newly
+created `obs-ffmpeg-mux` child through a validated pidfd. It excludes pre-existing,
+foreign, nested and ambiguous children, verifies PPID/executable/start ticks,
+and acknowledges `executed` only after signalling that exact child. Missing
+ownership reports `publisherTransportNotIdentified`, not success. Qt/controller
+polling remains live. A finite epoch-fenced timer resumes within at most 30
+seconds; manual Stop and destruction resume before releasing the output.
+
+This is independent of the harness's network bridge DATA pause. The verifier
+must observe stalled media, online controller, recreation/new generation and
+strictly decoded recovery on actual OBS; neither the hook acknowledgement nor
+the standalone ownership regression proves the entire recovery workflow.
 
 Whole-process `SIGSTOP` is a separate offline boundary: the frozen OBS process
 cannot poll or recover itself and must remain reported offline until the harness

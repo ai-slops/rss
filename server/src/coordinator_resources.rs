@@ -160,6 +160,7 @@ impl Owner {
                 store: &self.store,
                 state_directory: &self.state_directory,
                 engine_run_id: self.media.typed_engine_run_id(),
+                media: &self.media,
             })?;
         self.output_statuses.push(OutputStatus {
             output_id: output.id.clone(),

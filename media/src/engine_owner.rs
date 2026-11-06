@@ -13,6 +13,7 @@ use crate::protocol::{
     Command, CommandId, CommandKind, EngineEvent, EngineRunId, EventKind, Nanoseconds, OutputId,
     OutputObservedState, ProgramRevision, ScenePlacement, Sequence, TrackId,
 };
+use crate::source_capture::SourceCaptureRegistry;
 
 const ENGINE_RUN_TOKEN: &str = concat!("{", "engine_run_id", "}");
 
@@ -42,14 +43,16 @@ pub struct OwnerState {
     pub audio_routes: HashMap<TrackId, String>,
     pub mix_settings: HashMap<TrackId, crate::protocol::AudioMixRoute>,
     pub sources: HashMap<crate::protocol::SourceId, SourceRuntime>,
+    pub source_captures: std::sync::Arc<SourceCaptureRegistry>,
 }
 
 pub fn owner_thread(
     config: &EngineConfig,
     receiver: &Receiver<EngineRequest>,
     startup_sender: &mpsc::SyncSender<Result<(), EngineError>>,
+    source_captures: std::sync::Arc<SourceCaptureRegistry>,
 ) {
-    let setup = setup_owner(config);
+    let setup = setup_owner(config, source_captures);
     let Ok(mut owner) = setup else {
         let error = setup.err().unwrap_or(EngineError::OwnerStopped);
         let _ = startup_sender.send(Err(error));
@@ -78,7 +81,10 @@ pub fn owner_thread(
     stop_pipeline(&owner.pipeline);
 }
 
-fn setup_owner(config: &EngineConfig) -> Result<OwnerState, EngineError> {
+fn setup_owner(
+    config: &EngineConfig,
+    source_captures: std::sync::Arc<SourceCaptureRegistry>,
+) -> Result<OwnerState, EngineError> {
     gst::init().map_err(|error| EngineError::Gstreamer(error.to_string()))?;
     let engine_run_id = EngineRunId::new(&Uuid::now_v7().to_string())
         .map_err(|error| EngineError::Gstreamer(error.to_string()))?;
@@ -132,6 +138,7 @@ fn setup_owner(config: &EngineConfig) -> Result<OwnerState, EngineError> {
         audio_routes: config.audio_routes.iter().cloned().collect(),
         mix_settings: HashMap::new(),
         sources: HashMap::new(),
+        source_captures,
     })
 }
 

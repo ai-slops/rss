@@ -92,7 +92,12 @@ fn owner_loop(
                         let _ = reply.send(Ok(()));
                     }
                     Err(error) => {
-                        schedule_failure(definition, shared, &mut retry_at);
+                        schedule_failure(
+                            definition,
+                            shared,
+                            &mut retry_at,
+                            Some(error.to_string()),
+                        );
                         let result = match definition {
                             OutputDefinition::Rtmps { .. } => Ok(()),
                             OutputDefinition::Recording(_) => Err(error),
@@ -123,11 +128,11 @@ fn owner_loop(
             match pipeline.poll(shared) {
                 PipelinePoll::Progress => set_running(shared),
                 PipelinePoll::NoProgress => {}
-                PipelinePoll::Unhealthy => {
+                PipelinePoll::Unhealthy(error) => {
                     if let Some(failed) = active.take() {
                         failed.fail(shared);
                     }
-                    schedule_failure(definition, shared, &mut retry_at);
+                    schedule_failure(definition, shared, &mut retry_at, Some(error));
                 }
             }
         }
@@ -138,7 +143,9 @@ fn owner_loop(
                     active = Some(pipeline);
                     retry_at = None;
                 }
-                Err(_) => schedule_failure(definition, shared, &mut retry_at),
+                Err(error) => {
+                    schedule_failure(definition, shared, &mut retry_at, Some(error.to_string()));
+                }
             }
         }
     }
@@ -162,21 +169,23 @@ fn schedule_failure(
     definition: &OutputDefinition,
     shared: &Arc<Mutex<SharedOutput>>,
     retry_at: &mut Option<Instant>,
+    detail: Option<String>,
 ) {
     match definition {
         OutputDefinition::Rtmps { .. } => {
             *retry_at = Some(Instant::now() + RETRY_DELAY);
             update(shared, |state| {
                 state.snapshot.actual = OutputState::Retrying;
-                state.snapshot.error =
-                    Some("Network destination is unavailable; retrying.".to_owned());
+                state.snapshot.error = detail
+                    .or_else(|| Some("Network destination is unavailable; retrying.".to_owned()));
             });
         }
         OutputDefinition::Recording(_) => {
             *retry_at = None;
             update(shared, |state| {
                 state.snapshot.actual = OutputState::Failed;
-                state.snapshot.error = Some("Recording pipeline failed.".to_owned());
+                state.snapshot.error =
+                    detail.or_else(|| Some("Recording pipeline failed.".to_owned()));
             });
         }
     }

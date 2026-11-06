@@ -16,7 +16,7 @@ export async function runNativeSafety(options, evidenceDirectory, privateDirecto
   const mode = process.env.LIVE_PRODUCTION_RECOVERY_DIAGNOSTIC_MODE
   if (!["fences", "budget", "controls"].includes(mode)) throw new Error("Unsupported native diagnostic mode")
   const processes = new OwnedProcesses(options.supervisorBinary, { timeoutMs: options.deadlineSeconds * 1000, graceMs: 15000 })
-  let fixture; let memoryBefore; let commandId = 0; const cases = []
+  let fixture; let memoryBefore; let restartedProgramBaseline; let commandId = 0; const cases = []
   try {
     fixture = await startRecoveryFixture(options, privateDirectory, processes)
     const { server, source, faults, enrollment } = fixture
@@ -37,11 +37,14 @@ export async function runNativeSafety(options, evidenceDirectory, privateDirecto
     const snapshot = await fixture.server.api.snapshot()
     assert.equal(snapshot.project.outputs.length, fixture.baseline.outputs)
     assertProgramPreserved(fixture.baseline.snapshot, snapshot)
+    const sameRunBaseline = restartedProgramBaseline ?? fixture.baseline.snapshot
+    assert.equal(snapshot.engineRunId, sameRunBaseline.engineRunId)
+    assertProgramPreserved(sameRunBaseline, snapshot)
     const report = { schemaVersion: 1, status: "partial", nativeExecution: true, obsClaim: false,
       diagnosticMode: mode, originalFullGateRequired: true, cases,
       memoryBefore, memoryAfter: { obs: await memory(fixture.obs.nativePid), server: await memory(fixture.server.record.nativePid) },
       outputCountUnchanged: true, programContentUnchanged: true,
-      programRevisionUnchanged: snapshot.program.programRevision === fixture.baseline.programRevision }
+      programRevisionUnchanged: snapshot.program.programRevision === sameRunBaseline.program.programRevision }
     await writePrivateJson(join(evidenceDirectory, "recovery-report.json"), report)
     return report
   } catch (error) {
@@ -205,11 +208,15 @@ export async function runNativeSafety(options, evidenceDirectory, privateDirecto
     const disabled = snapshot.project.sources.find(value => value.id === source.id)
     await server.api.command("source.configure", source.id, { source: { ...disabled, enabled: true } }, { snapshot, expectedRevision: snapshot.project.revision })
     const oldRun = (await server.api.snapshot()).engineRunId
+    assert.equal(oldRun, fixture.baseline.snapshot.engineRunId)
+    assertProgramPreserved(fixture.baseline.snapshot, await server.api.snapshot())
     const oldPlugin = await readJson(faults.reportFile)
     await processes.stop(server.record)
     server = await startServerAt(processes, options, privateDirectory, fixture.password, "safety-restarted", server.stateDirectory, server.port)
     fixture.server = server
     assert.notEqual((await server.api.snapshot()).engineRunId, oldRun)
+    restartedProgramBaseline = await server.api.snapshot()
+    assertProgramPreserved(fixture.baseline.snapshot, restartedProgramBaseline)
     await waitPluginReport(faults.reportFile, value => BigInt(value.pollSeq) > BigInt(oldPlugin.pollSeq), 20000)
     await waitRecoveryStatus(server.api, source.id, value => value.controller.online, 20000)
     assert.equal((await server.api.recoveryStatus(source.id)).retry.attempts, attempts)

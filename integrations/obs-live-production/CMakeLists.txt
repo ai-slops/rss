@@ -50,6 +50,15 @@ target_link_libraries(obs-live-production PRIVATE
 set_target_properties(obs-live-production PROPERTIES PREFIX "")
 
 if(BUILD_TESTING)
+  add_executable(obs-live-production-fixture-audio-test
+    tests/fixture_audio_test.cpp src/fixture_source.cpp)
+  target_compile_features(obs-live-production-fixture-audio-test PRIVATE cxx_std_17)
+  target_compile_options(obs-live-production-fixture-audio-test PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>)
+  target_include_directories(obs-live-production-fixture-audio-test PRIVATE src)
+  target_link_libraries(obs-live-production-fixture-audio-test PRIVATE OBS::libobs Threads::Threads)
+  add_test(NAME obs-live-production-fixture-audio-test COMMAND obs-live-production-fixture-audio-test)
+  set_tests_properties(obs-live-production-fixture-audio-test PROPERTIES TIMEOUT 20)
   add_executable(obs-live-production-srt-url-test
     tests/srt_url_test.cpp
     src/srt_url.cpp

@@ -1,16 +1,16 @@
 import assert from "node:assert/strict"
-import { randomUUID } from "node:crypto"
 import { join } from "node:path"
 import { readJson, writePrivateJson } from "./private-files.mjs"
 import { OwnedProcesses, waitForFile } from "./processes.mjs"
 import { startServerAt } from "./native-runtime.mjs"
 import { writeRecoveryFaultCommand } from "./recovery-faults.mjs"
-import { captureStrictSourceRecording, updateRecoveryPolicy, waitForQuiescentMedia, waitForRecoveredMedia } from "./recovery-evidence.mjs"
+import { captureStrictSourceRecording, updateRecoveryPolicy, waitForRecoveredMedia } from "./recovery-evidence.mjs"
 import { startRecoveryFixture } from "./recovery-native-setup.mjs"
 import { diagnosticOmissions, recoveryDisposition } from "./recovery-diagnostic-profile.mjs"
 import { runNativeSafety } from "./recovery-native-safety.mjs"
 import { assertProgramPreserved } from "./program-content-fence.mjs"
-import { runPublisherFreeze } from "./recovery-publisher-freeze.mjs"
+import { runRequiredPublisherFreeze } from "./recovery-publisher-freeze.mjs"
+import { stopQueuedRecovery } from "./recovery-queued-stop.mjs"
 import { numeric as number, rawControllerPoll as rawPoll, usableReceiver as usable,
   waitPluginReport as waitReport, waitRecoveryStatus as waitStatus } from "./recovery-native-evidence.mjs"
 
@@ -33,7 +33,7 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
     const healthy = await waitStatus(server.api, source.id, status => usable(status.receiver), 30_000)
 
     phase = "publisherTransportFreeze"
-    faultMatrix.push(await runPublisherFreeze({ server, source, obs, bridge, faults,
+    faultMatrix.push(await runRequiredPublisherFreeze({ server, source, obs, bridge, faults,
       supervisorBinary: options.supervisorBinary },
     (kind, result, durationMs) => issue(faults, ++commandId, kind, result, durationMs)))
     plugin = await readJson(faults.reportFile)
@@ -42,6 +42,7 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
     await issue(faults, ++commandId, "pauseActionDispatch", "paused")
     const beforeDropCount = number(plugin.restartExecutionCount)
     const beforeDropAttempts = (await server.api.recoveryStatus(source.id)).retry.attempts
+    const beforeDropReceiver = (await server.api.recoveryStatus(source.id)).receiver
     const beforeDroppedDatagrams = bridge.stats().droppedData
     bridge.pauseData()
     await waitStatus(server.api, source.id,
@@ -58,15 +59,15 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
       (report) => number(report.restartExecutionCount) > beforeDropCount
         && report.lastRecoveryCommandId === pendingDropCommand, 15_000)
     bridge.resumeData()
-    const recovered = await waitForRecoveredMedia(server.api, source.id, healthy.receiver,
+    const recovered = await waitForRecoveredMedia(server.api, source.id, beforeDropReceiver,
       (status) => status.retry.lastResult === "recovered"
-        && status.receiver.continuityGeneration !== healthy.receiver.continuityGeneration)
+        && status.receiver.continuityGeneration !== beforeDropReceiver.continuityGeneration)
     await bridge.retirePreviousPeer()
     const strictMedia = await captureStrictSourceRecording(server.api, source.id, options.supervisorBinary,
       "Recovery OBS strict clean")
     faultMatrix.push({ kind: "bridgeDataDrop", mechanism: "loopbackSrtDataPause", result: "recoveredUsableAv",
       videoFrames: recovered.receiver.videoFrames, audioBuffers: recovered.receiver.audioBuffers,
-      continuityGenerationBefore: healthy.receiver.continuityGeneration,
+      continuityGenerationBefore: beforeDropReceiver.continuityGeneration,
       continuityGenerationAfter: recovered.receiver.continuityGeneration,
       attemptsBefore: beforeDropAttempts, droppedDatagrams: bridge.stats().droppedData - beforeDroppedDatagrams,
       pendingRecoveryCommandId: pendingDropCommand, bridgeHandover: dropHandover })
@@ -144,7 +145,9 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
     const beforeRestartStatus = await server.api.recoveryStatus(source.id)
     const beforeRestartPlugin = await readJson(faults.reportFile)
     const stateDirectory = server.stateDirectory; const serverPort = server.port
-    assertProgramPreserved(baseline.snapshot, await server.api.snapshot())
+    const beforeRestartSnapshot = await server.api.snapshot()
+    assert.equal(beforeRestartSnapshot.engineRunId, baseline.snapshot.engineRunId)
+    assertProgramPreserved(baseline.snapshot, beforeRestartSnapshot)
     await processes.stop(server.record)
     server = await startServerAt(processes, options, privateDirectory, password,
       "recovery-restarted", stateDirectory, serverPort)
@@ -154,6 +157,7 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
       (report) => number(report.pollSeq) > number(beforeRestartPlugin.pollSeq), 20_000)
     assert.equal(number(plugin.restartExecutionCount), number(beforeRestartPlugin.restartExecutionCount))
     restartedProgramBaseline = await server.api.snapshot()
+    assert.notEqual(restartedProgramBaseline.engineRunId, beforeRestartSnapshot.engineRunId)
     assertProgramPreserved(baseline.snapshot, restartedProgramBaseline)
     faultMatrix.push({ kind: "observeServerRestart", result: "controllerPersisted",
       attempts: restartedStatus.retry.attempts, staleActionExecutions: 0 })
@@ -215,37 +219,24 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
     faultMatrix.push({ kind: "exhaustRetryBudget", result: "exhausted", attempts: exhausted.retry.attempts })
 
     phase = "manualStop"
-    await issue(faults, ++commandId, "pauseActionDispatch", "paused")
-    await server.api.retryRecovery(source.id, randomUUID())
-    await waitStatus(server.api, source.id, (status) => status.retry.lastResult === "pending", 10_000)
-    plugin = await waitReport(faults.reportFile,
-      (report) => report.recoveryActionPending === true && report.pendingRecoveryCommandId.length > 0, 10_000)
-    const pendingStopCommand = plugin.pendingRecoveryCommandId
-    const beforeStop = number((await readJson(faults.reportFile)).restartExecutionCount)
-    await issue(faults, ++commandId, "manualStopAfterQueuedRestart", "executed")
-    await issue(faults, ++commandId, "resumeActionDispatch", "alreadyCancelled")
-    plugin = await waitReport(faults.reportFile,
-      (report) => report.localDesired === "stopped" && report.recoveryActionPending === false
-        && report.pendingRecoveryCommandId === "" && number(report.restartExecutionCount) === beforeStop, 10_000)
-    bridge.resumeData()
-    const stoppedAfter = await waitForQuiescentMedia(server.api, source.id)
-    await new Promise((resolve) => setTimeout(resolve, 500))
-    assert.equal(number((await readJson(faults.reportFile)).restartExecutionCount), beforeStop)
-    faultMatrix.push({ kind: "manualStopAfterQueuedRestart", result: "pendingCancelledStoppedNoDecodedProgress",
-      pendingRecoveryCommandId: pendingStopCommand })
+    faultMatrix.push(await stopQueuedRecovery({ server, source, faults, bridge },
+      (kind, result) => issue(faults, ++commandId, kind, result)))
+    plugin = await readJson(faults.reportFile)
 
     snapshot = await server.api.snapshot()
     assert.equal(snapshot.project.outputs.length, baseline.outputs)
     assertProgramPreserved(baseline.snapshot, snapshot)
+    assert.equal(snapshot.engineRunId, restartedProgramBaseline.engineRunId)
     assertProgramPreserved(restartedProgramBaseline, snapshot)
-    const report = { schemaVersion: 1, ...recoveryDisposition(omissions), nativeExecution: true,
+    const unavailable = faultMatrix.filter(value => value.result === "unavailable").map(value => value.kind)
+    const report = { schemaVersion: 1, ...recoveryDisposition(omissions, unavailable), nativeExecution: true,
       sourceId: source.id, initialReceiver: healthy.receiver, recoveredReceiver: recovered.receiver,
       policyVersion: restored.after.policyVersion, strictMedia,
       exhaustedAttempts: exhausted.retry.attempts, restartExecutionCount: number(plugin.restartExecutionCount),
       lastCommandId: plugin.executedCommandId, faultMatrix,
       udpBridge: bridge.stats(),
       outputCountUnchanged: true, programContentUnchanged: true,
-      programRevisionUnchanged: snapshot.program.programRevision === baseline.programRevision }
+      programRevisionUnchanged: snapshot.program.programRevision === restartedProgramBaseline.program.programRevision }
     await writePrivateJson(join(evidenceDirectory, "recovery-report.json"), report)
     return report
   } catch (error) {
@@ -265,6 +256,6 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
     await writeRecoveryFaultCommand(faults.commandFile, `${id}`, kind, durationMs)
     return waitReport(faults.reportFile,
       (report) => report.executedCommandId === `${id}` && report.executedCommandKind === kind
-        && report.executedCommandResult === result, 15_000)
+        && (result === null || report.executedCommandResult === result), 15_000)
   }
 }

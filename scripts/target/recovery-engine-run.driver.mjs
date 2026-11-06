@@ -21,7 +21,12 @@ let server; let sender; let endpoint; let enrollment; let sourceId; let seq = 0;
 const evidence = {}
 try {
   server = await startServer(processes, options, directory, password, "run-a")
+  const initialProgram = await server.api.snapshot()
+  const sameScene = initialProgram.project.scenes.find(value => value.id === initialProgram.program.sceneId)
+  await server.api.command("program.take", sameScene.id, { sceneId: sameScene.id, revision: sameScene.revision },
+    { snapshot: initialProgram, expectedRevision: initialProgram.program.programRevision })
   const baseline = await server.api.snapshot()
+  assert.notEqual(baseline.program.programRevision, initialProgram.program.programRevision)
   await server.api.command("source.create", baseline.project.id, { name: "Engine-run source",
     adapter: { kind: "srt", bindAddress: "127.0.0.1", port: await freeUdpPort(), bufferMs: 120 } }, { snapshot: baseline })
   sourceId = (await server.api.snapshot()).project.sources.find(value => value.name === "Engine-run source").id

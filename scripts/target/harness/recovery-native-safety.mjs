@@ -10,6 +10,7 @@ import { readJson, writePrivateJson } from "./private-files.mjs"
 import { writeRecoveryFaultCommand } from "./recovery-faults.mjs"
 import { waitPluginReport, waitRecoveryStatus, usableReceiver, rawControllerPoll } from "./recovery-native-evidence.mjs"
 import { captureStrictSourceRecording, waitForQuiescentMedia, updateRecoveryPolicy } from "./recovery-evidence.mjs"
+import { assertProgramPreserved } from "./program-content-fence.mjs"
 
 export async function runNativeSafety(options, evidenceDirectory, privateDirectory) {
   const mode = process.env.LIVE_PRODUCTION_RECOVERY_DIAGNOSTIC_MODE
@@ -35,11 +36,12 @@ export async function runNativeSafety(options, evidenceDirectory, privateDirecto
     }
     const snapshot = await fixture.server.api.snapshot()
     assert.equal(snapshot.project.outputs.length, fixture.baseline.outputs)
-    assert.equal(snapshot.program.programRevision, fixture.baseline.programRevision)
+    assertProgramPreserved(fixture.baseline.snapshot, snapshot)
     const report = { schemaVersion: 1, status: "partial", nativeExecution: true, obsClaim: false,
       diagnosticMode: mode, originalFullGateRequired: true, cases,
       memoryBefore, memoryAfter: { obs: await memory(fixture.obs.nativePid), server: await memory(fixture.server.record.nativePid) },
-      outputCountUnchanged: true, programRevisionUnchanged: true }
+      outputCountUnchanged: true, programContentUnchanged: true,
+      programRevisionUnchanged: snapshot.program.programRevision === fixture.baseline.programRevision }
     await writePrivateJson(join(evidenceDirectory, "recovery-report.json"), report)
     return report
   } catch (error) {

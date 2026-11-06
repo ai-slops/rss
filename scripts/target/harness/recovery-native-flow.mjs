@@ -9,6 +9,7 @@ import { captureStrictSourceRecording, updateRecoveryPolicy, waitForQuiescentMed
 import { startRecoveryFixture } from "./recovery-native-setup.mjs"
 import { diagnosticOmissions, recoveryDisposition } from "./recovery-diagnostic-profile.mjs"
 import { runNativeSafety } from "./recovery-native-safety.mjs"
+import { assertProgramPreserved } from "./program-content-fence.mjs"
 import { numeric as number, rawControllerPoll as rawPoll, usableReceiver as usable,
   waitPluginReport as waitReport, waitRecoveryStatus as waitStatus } from "./recovery-native-evidence.mjs"
 
@@ -225,14 +226,15 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
 
     snapshot = await server.api.snapshot()
     assert.equal(snapshot.project.outputs.length, baseline.outputs)
-    assert.equal(snapshot.program.programRevision, baseline.programRevision)
+    assertProgramPreserved(baseline.snapshot, snapshot)
     const report = { schemaVersion: 1, ...recoveryDisposition(omissions, ["publisherTransportFreeze"]), nativeExecution: true,
       sourceId: source.id, initialReceiver: healthy.receiver, recoveredReceiver: recovered.receiver,
       policyVersion: restored.after.policyVersion, strictMedia,
       exhaustedAttempts: exhausted.retry.attempts, restartExecutionCount: number(plugin.restartExecutionCount),
       lastCommandId: plugin.executedCommandId, faultMatrix,
       udpBridge: bridge.stats(),
-      outputCountUnchanged: true, programRevisionUnchanged: true }
+      outputCountUnchanged: true, programContentUnchanged: true,
+      programRevisionUnchanged: snapshot.program.programRevision === baseline.programRevision }
     await writePrivateJson(join(evidenceDirectory, "recovery-report.json"), report)
     return report
   } catch (error) {

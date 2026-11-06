@@ -8,6 +8,9 @@ find_package(libobs REQUIRED)
 find_package(obs-frontend-api REQUIRED)
 find_package(Threads REQUIRED)
 find_package(Qt6 REQUIRED COMPONENTS Network Widgets)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(LIVE_FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil)
+pkg_check_modules(LIVE_SRT REQUIRED IMPORTED_TARGET srt)
 
 add_library(obs-live-production MODULE
   src/config.cpp
@@ -19,13 +22,17 @@ add_library(obs-live-production MODULE
   src/fixture_state.cpp
   src/frontend.cpp
   src/frontend_dialog.cpp
+  src/live_muxer.cpp
+  src/live_packet.cpp
+  src/live_queue.cpp
+  src/live_srt_output.cpp
+  src/live_srt_transport.cpp
   src/module_runtime.cpp
   src/module_runtime_actions.cpp
   src/module_runtime_poll.cpp
   src/plugin.cpp
   src/publisher.cpp
   src/publisher_runtime.cpp
-  src/publisher_transport_fault.cpp
   src/recovery_action.cpp
   src/recovery_client.cpp
   src/recovery_fault.cpp
@@ -48,10 +55,57 @@ target_link_libraries(obs-live-production PRIVATE
   Qt6::Widgets
   Qt6::Network
   Threads::Threads
+  PkgConfig::LIVE_FFMPEG
+  PkgConfig::LIVE_SRT
 )
 set_target_properties(obs-live-production PROPERTIES PREFIX "")
 
 if(BUILD_TESTING)
+  add_executable(obs-live-production-live-queue-test
+    tests/live_queue_test.cpp src/live_packet.cpp src/live_queue.cpp)
+  target_compile_features(obs-live-production-live-queue-test PRIVATE cxx_std_17)
+  target_compile_options(obs-live-production-live-queue-test PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>)
+  target_include_directories(obs-live-production-live-queue-test PRIVATE src)
+  target_link_libraries(obs-live-production-live-queue-test PRIVATE OBS::libobs Threads::Threads)
+  add_test(NAME obs-live-production-live-queue-test COMMAND obs-live-production-live-queue-test)
+  set_tests_properties(obs-live-production-live-queue-test PROPERTIES TIMEOUT 20)
+  add_executable(obs-live-production-live-output-test
+    tests/live_output_test.cpp tests/live_test_decode.cpp tests/live_test_output.cpp
+    tests/live_test_receiver.cpp
+    src/fixture_source.cpp src/publisher.cpp src/live_muxer.cpp src/live_packet.cpp src/live_queue.cpp
+    src/live_srt_output.cpp src/live_srt_transport.cpp)
+  target_compile_features(obs-live-production-live-output-test PRIVATE cxx_std_17)
+  target_compile_options(obs-live-production-live-output-test PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>)
+  target_include_directories(obs-live-production-live-output-test PRIVATE
+    src)
+  target_link_libraries(obs-live-production-live-output-test PRIVATE
+    OBS::libobs Qt6::Network Threads::Threads PkgConfig::LIVE_FFMPEG PkgConfig::LIVE_SRT)
+  add_test(NAME obs-live-production-live-output-test COMMAND obs-live-production-live-output-test)
+  set_tests_properties(obs-live-production-live-output-test PROPERTIES TIMEOUT 30)
+  add_test(NAME obs-live-production-live-output-ntsc-test COMMAND obs-live-production-live-output-test --ntsc)
+  set_tests_properties(obs-live-production-live-output-ntsc-test PROPERTIES TIMEOUT 30)
+  add_executable(obs-live-production-live-transport-test
+    tests/live_transport_test.cpp src/live_srt_transport.cpp)
+  target_compile_features(obs-live-production-live-transport-test PRIVATE cxx_std_17)
+  target_compile_options(obs-live-production-live-transport-test PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>)
+  target_include_directories(obs-live-production-live-transport-test PRIVATE src)
+  target_link_libraries(obs-live-production-live-transport-test PRIVATE
+    Qt6::Network Threads::Threads PkgConfig::LIVE_SRT)
+  add_test(NAME obs-live-production-live-transport-test COMMAND obs-live-production-live-transport-test)
+  set_tests_properties(obs-live-production-live-transport-test PROPERTIES TIMEOUT 10)
+  add_executable(obs-live-production-live-timestamp-test
+    tests/live_timestamp_test.cpp src/live_muxer.cpp src/live_packet.cpp
+    src/live_queue.cpp src/live_srt_output.cpp src/live_srt_transport.cpp)
+  target_compile_features(obs-live-production-live-timestamp-test PRIVATE cxx_std_17)
+  target_compile_options(obs-live-production-live-timestamp-test PRIVATE
+    $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>)
+  target_include_directories(obs-live-production-live-timestamp-test PRIVATE src)
+  target_link_libraries(obs-live-production-live-timestamp-test PRIVATE
+    OBS::libobs Qt6::Network Threads::Threads PkgConfig::LIVE_FFMPEG PkgConfig::LIVE_SRT)
+  add_test(NAME obs-live-production-live-timestamp-test COMMAND obs-live-production-live-timestamp-test)
   add_executable(obs-live-production-fixture-audio-test
     tests/fixture_audio_test.cpp src/fixture_source.cpp)
   target_compile_features(obs-live-production-fixture-audio-test PRIVATE cxx_std_17)
@@ -200,7 +254,6 @@ if(BUILD_TESTING)
     src/module_runtime_poll.cpp
     src/publisher.cpp
     src/publisher_runtime.cpp
-    src/publisher_transport_fault.cpp
     src/recovery_action.cpp
     src/recovery_client.cpp
     src/recovery_model.cpp

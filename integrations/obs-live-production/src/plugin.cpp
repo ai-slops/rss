@@ -3,6 +3,7 @@
 #include "frontend.hpp"
 #include "module_runtime.hpp"
 #include "recovery_fixture.hpp"
+#include "live_srt_output.hpp"
 
 #include <obs-frontend-api.h>
 #include <obs-module.h>
@@ -41,6 +42,7 @@ MODULE_EXPORT const char *obs_module_description(void) {
 }
 
 bool obs_module_load(void) {
+  live_production::register_live_srt_output();
   live_production::register_fixture_source();
   const char *fixture_path = std::getenv("LIVE_PRODUCTION_OBS_FIXTURE_FILE");
   const char *recovery_path =

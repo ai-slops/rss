@@ -11,6 +11,7 @@ bool PublisherRuntime::configure(const PublisherConfig &config,
     return false;
   }
   publisher_.reset();
+  active_transport_fault_.reset();
   config_ = config;
   last_state_ = "ready";
   last_error_.clear();
@@ -52,6 +53,7 @@ void PublisherRuntime::stop() {
   transitioning_ = true;
   if (publisher_) publisher_->stop();
   publisher_.reset();
+  active_transport_fault_.reset();
   last_state_ = config_ ? "stopped" : "created";
   transitioning_ = false;
 }

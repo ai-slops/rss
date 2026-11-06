@@ -57,7 +57,7 @@ void RecoveryFixture::execute_command(uint64_t command_id, const std::string &ki
         if (active_) runtime_.fault_resume_publisher(epoch);
       });
     } else {
-      last_command_result_ = "publisherTransportNotIdentified";
+      last_command_result_ = "publisherTransportNotQuiescent";
     }
   } else {
     last_command_result_ = "awaitingHttpEvidence";

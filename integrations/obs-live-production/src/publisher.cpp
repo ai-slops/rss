@@ -1,7 +1,5 @@
 #include "publisher.hpp"
 
-#include "srt_url.hpp"
-
 #include <obs-module.h>
 
 #include <utility>
@@ -27,13 +25,17 @@ obs_data_t *audio_settings() {
   return settings;
 }
 
-obs_data_t *service_settings(const PublisherConfig &config) {
+obs_data_t *output_settings(const PublisherConfig &config) {
   obs_data_t *settings = obs_data_create();
-  const std::string url = build_srt_url(config.target);
-  obs_data_set_string(settings, "server", url.c_str());
-  obs_data_set_string(settings, "key", config.target.stream_id.c_str());
-  obs_data_set_bool(settings, "use_auth", true);
-  obs_data_set_string(settings, "password", config.target.passphrase.c_str());
+  obs_data_set_string(settings, "host", config.target.host.c_str());
+  obs_data_set_int(settings, "port", config.target.port);
+  obs_data_set_string(settings, "passphrase", config.target.passphrase.c_str());
+  obs_data_set_string(settings, "streamId", config.target.stream_id.c_str());
+  obs_data_set_int(settings, "bufferMs", config.target.buffer_ms);
+  obs_data_set_int(settings, "width", config.encoding.width);
+  obs_data_set_int(settings, "height", config.encoding.height);
+  obs_data_set_int(settings, "fpsNumerator", config.encoding.fps_numerator);
+  obs_data_set_int(settings, "fpsDenominator", config.encoding.fps_denominator);
   return settings;
 }
 
@@ -93,19 +95,16 @@ bool Publisher::initialize(std::string &error) {
   obs_encoder_set_video(video_encoder_, video_);
   obs_encoder_set_audio(audio_encoder_, obs_get_audio());
 
-  obs_data_t *service_config = service_settings(config_);
-  const std::string service_name = "live-production-service-" + instance_name_;
-  service_ = obs_service_create("rtmp_custom", service_name.c_str(),
-                                service_config, nullptr);
-  obs_data_release(service_config);
+  obs_data_t *settings = output_settings(config_);
   const std::string output_name = "live-production-output-" + instance_name_;
-  output_ = obs_output_create("ffmpeg_mpegts_muxer", output_name.c_str(),
-                              nullptr, nullptr);
-  if (!service_ || !output_)
-    return fail("required SRT service or MPEG-TS output is unavailable");
+  output_ = obs_output_create("live_production_mpegts_srt", output_name.c_str(),
+                              settings, nullptr);
+  obs_data_release(settings);
+  if (!output_)
+    return fail("owned MPEG-TS SRT output is unavailable");
+  obs_output_set_reconnect_settings(output_, 0, 0);
   obs_output_set_video_encoder(output_, video_encoder_);
   obs_output_set_audio_encoder(output_, audio_encoder_, 0);
-  obs_output_set_service(output_, service_);
 
   signal_handler_t *signals = obs_output_get_signal_handler(output_);
   signal_handler_connect(signals, "starting", output_starting, this);
@@ -118,7 +117,6 @@ bool Publisher::initialize(std::string &error) {
 }
 
 bool Publisher::start(std::string &error) {
-  transport_fault_ = std::make_unique<PublisherTransportFault>();
   if (obs_output_start(output_))
     return true;
   error = "OBS rejected output start; inspect local OBS logs privately";
@@ -133,12 +131,29 @@ void Publisher::stop() {
 }
 
 bool Publisher::freeze_transport() {
-  return output_ && obs_output_active(output_) && transport_fault_ &&
-         transport_fault_->freeze();
+  if (!output_ || !obs_output_active(output_)) return false;
+  calldata_t params;
+  calldata_init(&params);
+  const bool called = proc_handler_call(obs_output_get_proc_handler(output_),
+                                       "live_production_freeze", &params);
+  const int64_t epoch = calldata_int(&params, "epoch");
+  const bool frozen = called && calldata_bool(&params, "success") && epoch > 0;
+  if (frozen) transport_epoch_ = epoch;
+  calldata_free(&params);
+  return frozen;
 }
 
-void Publisher::resume_transport() {
-  if (transport_fault_) (void)transport_fault_->resume();
+bool Publisher::resume_transport() {
+  if (!output_ || !transport_epoch_) return false;
+  calldata_t params;
+  calldata_init(&params);
+  calldata_set_int(&params, "epoch", *transport_epoch_);
+  const bool called = proc_handler_call(obs_output_get_proc_handler(output_),
+                                       "live_production_resume", &params);
+  const bool resumed = called && calldata_bool(&params, "success");
+  if (resumed) transport_epoch_.reset();
+  calldata_free(&params);
+  return resumed;
 }
 
 std::string Publisher::state() const {
@@ -196,8 +211,6 @@ void Publisher::release() {
     obs_output_release(output_);
     output_ = nullptr;
   }
-  if (service_)
-    obs_service_release(service_);
   if (audio_encoder_)
     obs_encoder_release(audio_encoder_);
   if (video_encoder_)
@@ -209,7 +222,6 @@ void Publisher::release() {
   }
   if (source_)
     obs_source_release(source_);
-  service_ = nullptr;
   audio_encoder_ = nullptr;
   video_encoder_ = nullptr;
   view_ = nullptr;

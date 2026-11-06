@@ -33,6 +33,39 @@ fix is being made concurrently.
 
 ## Genuine new-candidate successes, not OBS31 substitution
 
+### Subsequent live freeze-hook blocker, 11:15 UTC
+
+At clean integration `d72e68f`, the hook itself was invoked, not just inferred
+from a process scan. Its exact result was `publisherTransportNotIdentified`.
+The verified OBS parent executable was `obs` and both its direct-child and mux
+candidate lists were empty. Controller polling remained running. Private proof:
+`var/de4-native-04/recovery-full/private/publisher-freeze-progress.json`.
+
+Official OBS30.0.2 commit `afbebf94867982b7c294ebc1b8c04438f8b59536`
+defaults `ENABLE_NEW_MPEGTS_OUTPUT=ON` in
+`plugins/obs-ffmpeg/CMakeLists.txt`. Its `obs-ffmpeg-mpegts.c` implements
+`ffmpeg_mpegts_muxer` using in-process libsrt/AVIO and pthread writes. The
+`obs-ffmpeg-mux` child belongs to the separate legacy `obs-ffmpeg-mux.c` path.
+Primary's new hook therefore cannot perform this required fault on the actual
+Ubuntu OBS30 configuration. No whole-process/thread stop, source mute or bridge
+DATA pause was substituted or labelled independent publisher freeze. This needs
+a primary-owned correction compatible with the actual publisher output.
+
+The same full run recovered real strict OBS A/V after bridge DATA drop (generation
+1 to 2), duplicate delivery and the separate DATA-freeze case (generation 2 to
+3). Its later whole-process-resume path failed because the verifier bridge had
+not authorized a new peer at that fault boundary (36 rejected peers). That is
+an owned harness issue being corrected, not evidence that production recovery
+itself is broken.
+
+The diagnostic safety modes all pass their individual strict-media, auth,
+process/poll/intent, duplicate, backoff, concurrent retry, Stop, lease and daemon
+restart assertions. Their report status remains deliberately partial/exit 1.
+The instrumented soak replay passes all original assertions at 181 seconds,
+5409 frames, 37 segments, RSS growth 223676 KiB and PCM RMS 2789.24. This does
+not erase or clear the initial EOS failure; no production change occurred between
+the failure and pass.
+
 - Native debug/release server and strict plugin builds passed.
 - All 12 native CTests passed, including real libobs audio and pidfd fault tests.
 - Genuine OBS30 two-source rehearsal passed original absolute audio/tone,

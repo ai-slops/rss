@@ -79,3 +79,11 @@ mod lifecycle_tests;
 #[cfg(test)]
 #[path = "output_runtime_failure_tests.rs"]
 mod failure_tests;
+
+#[cfg(test)]
+#[path = "output_runtime_eos_tests.rs"]
+mod eos_tests;
+
+#[cfg(test)]
+#[path = "output_finalizer_ownership_tests.rs"]
+mod finalizer_ownership_tests;

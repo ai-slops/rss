@@ -12,7 +12,7 @@ pub fn recording_pipeline(
 ) -> Result<gst::Pipeline, OutputError> {
     let segment_ns = segment_duration.as_nanos().try_into().unwrap_or(u64::MAX);
     parse(&format!(
-        "splitmuxsink name=recording_mux location={} muxer-factory=matroskamux max-size-time={segment_ns} send-keyframe-requests=true async-finalize=true \
+        "splitmuxsink name=recording_mux location={} muxer=matroskamux muxer-factory=matroskamux max-size-time={segment_ns} send-keyframe-requests=true async-finalize=false \
          intervideosrc name=recording_video_input channel={} timeout=1000000000 ! queue max-size-time=2000000000 ! videoconvert ! video/x-raw,format=I420 ! x264enc tune=zerolatency speed-preset=veryfast key-int-max=30 bitrate=2500 ! h264parse config-interval=-1 ! identity name=recording_video_timeline single-segment=true ! identity name=output_activity ! recording_mux.video \
          interaudiosrc name=recording_audio_input channel={} buffer-time=500000000 latency-time=25000000 ! queue max-size-time=2000000000 ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=128000 ! aacparse ! recording_mux.audio_0",
         quote(pattern),
@@ -27,7 +27,7 @@ pub fn source_recording_pipeline(
 ) -> Result<gst::Pipeline, OutputError> {
     let segment_ns = segment_duration.as_nanos().try_into().unwrap_or(u64::MAX);
     parse(&format!(
-        "splitmuxsink name=recording_mux location={} muxer-factory=matroskamux max-size-time={segment_ns} send-keyframe-requests=true async-finalize=true \
+        "splitmuxsink name=recording_mux location={} muxer=matroskamux muxer-factory=matroskamux max-size-time={segment_ns} send-keyframe-requests=true async-finalize=false \
          appsrc name=recording_video_input is-live=true format=time block=false max-buffers=8 max-bytes=0 max-time=0 ! queue max-size-buffers=8 ! videoconvert ! video/x-raw,format=I420 ! x264enc tune=zerolatency speed-preset=veryfast key-int-max=30 bitrate=2500 ! h264parse config-interval=-1 ! identity name=recording_video_timeline single-segment=true ! identity name=output_activity ! recording_mux.video \
          appsrc name=recording_audio_input is-live=true format=time block=false max-buffers=64 max-bytes=0 max-time=0 ! queue max-size-buffers=64 ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=128000 ! aacparse ! recording_mux.audio_0",
         quote(pattern),
@@ -166,6 +166,30 @@ mod tests {
             "running time was {:?}",
             observation.running_time
         );
+        Ok(())
+    }
+
+    #[test]
+    fn recording_mux_finalizes_fragments_in_pipeline_order() -> anyhow::Result<()> {
+        gst::init()?;
+        let directory = tempfile::tempdir()?;
+        let pattern = directory.path().join("ordered-%05d.mkv");
+        let pattern = pattern.to_str().context("ordered pattern")?;
+        let tap = MediaTap::new("ordered-video", "ordered-audio")?;
+        for pipeline in [
+            recording_pipeline(&tap, pattern, Duration::from_secs(1))?,
+            source_recording_pipeline(pattern, Duration::from_secs(1))?,
+        ] {
+            let mux = pipeline.by_name("recording_mux").context("recording mux")?;
+            assert!(!mux.property::<bool>("async-finalize"));
+            let container = mux
+                .property::<Option<gst::Element>>("muxer")
+                .context("owned synchronous Matroska muxer")?;
+            assert_eq!(
+                container.factory().context("muxer factory")?.name(),
+                "matroskamux"
+            );
+        }
         Ok(())
     }
 }

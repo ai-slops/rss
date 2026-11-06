@@ -1,10 +1,9 @@
-use std::{fs, path::Path};
+use std::{fs, os::unix::fs::PermissionsExt, path::Path};
 
 pub fn preserve(source: &Path, label: &str) -> anyhow::Result<()> {
     let Some(root) = std::env::var_os("LIVE_PRODUCTION_MEDIA_EVIDENCE_DIR") else {
         return Ok(());
     };
-    use std::os::unix::fs::PermissionsExt;
     let root = std::path::PathBuf::from(root);
     fs::create_dir_all(&root)?;
     fs::set_permissions(&root, fs::Permissions::from_mode(0o700))?;
@@ -21,7 +20,6 @@ pub fn preserve(source: &Path, label: &str) -> anyhow::Result<()> {
 }
 
 fn copy_directory(source: &Path, destination: &Path) -> anyhow::Result<()> {
-    use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(destination, fs::Permissions::from_mode(0o700))?;
     for entry in fs::read_dir(source)? {
         let entry = entry?;

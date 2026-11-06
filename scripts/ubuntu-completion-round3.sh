@@ -12,12 +12,13 @@ test -z "$(GIT_MASTER=1 git status --porcelain)"
 GIT_MASTER=1 git rev-parse HEAD > var/completion-03/source-head.txt
 SUP="$ROOT/target/debug/live-production-supervisor"
 : > var/completion-03/results.tsv
+failed=0
 gate() {
   local name=$1 result=0 start
   shift; start=$(date -u +%FT%TZ)
   "$@" > "var/completion-03/$name.log" 2>&1 || result=$?
   printf '%s\t%s\t%s\t%s\n' "$name" "$result" "$start" "$(date -u +%FT%TZ)" | tee -a var/completion-03/results.tsv
-  if [ "$result" != 0 ]; then tail -n 16 "var/completion-03/$name.log"; fi
+  if [ "$result" != 0 ]; then failed=1; tail -n 16 "var/completion-03/$name.log"; fi
 }
 recovery() {
   scripts/target/recovery-native.sh --plugin-dir "$ROOT/var/obs-plugin-stage" --evidence-dir "$ROOT/var/$1" --server-binary "$ROOT/target/release/live-production" --supervisor-binary "$ROOT/target/release/live-production-supervisor" --web-dist "$ROOT/web/dist" --obs-binary /usr/bin/obs --xvfb-binary /usr/bin/Xvfb --deadline-seconds 300
@@ -39,3 +40,4 @@ sha256sum var/obs-plugin-stage/bin/64bit/obs-live-production.so target/release/l
 GIT_MASTER=1 git status --porcelain > var/completion-03/source-status.txt
 ps -eo pid,ppid,stat,comm > var/completion-03/processes-after.txt
 printf 'round_three_finished=%s\n' "$(date -u +%FT%TZ)"
+exit "$failed"

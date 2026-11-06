@@ -14,12 +14,13 @@ SUP="$ROOT/target/debug/live-production-supervisor"
 export LIVE_PRODUCTION_RECOVERY_DRIVER=1 LIVE_PRODUCTION_RECOVERY_HTTP_DRIVER=1 LIVE_PRODUCTION_RECOVERY_ROOT="$ROOT"
 export LIVE_PRODUCTION_RECOVERY_SUPERVISOR="$ROOT/target/release/live-production-supervisor" LIVE_PRODUCTION_RECOVERY_SERVER="$ROOT/target/release/live-production" LIVE_PRODUCTION_RECOVERY_WEB_DIST="$ROOT/web/dist"
 : > var/completion-02/results.tsv
+failed=0
 gate() {
   local name=$1 result=0 start
   shift; start=$(date -u +%FT%TZ)
   "$@" > "var/completion-02/$name.log" 2>&1 || result=$?
   printf '%s\t%s\t%s\t%s\n' "$name" "$result" "$start" "$(date -u +%FT%TZ)" | tee -a var/completion-02/results.tsv
-  if [ "$result" != 0 ]; then tail -n 16 "var/completion-02/$name.log"; fi
+  if [ "$result" != 0 ]; then failed=1; tail -n 16 "var/completion-02/$name.log"; fi
 }
 recovery() {
   scripts/target/recovery-native.sh --plugin-dir "$ROOT/var/obs-plugin-stage" --evidence-dir "$ROOT/var/$1" --server-binary "$ROOT/target/release/live-production" --supervisor-binary "$ROOT/target/release/live-production-supervisor" --web-dist "$ROOT/web/dist" --obs-binary /usr/bin/obs --xvfb-binary /usr/bin/Xvfb --deadline-seconds 300
@@ -36,3 +37,4 @@ gate recovery-budget env LIVE_PRODUCTION_RECOVERY_DIAGNOSTIC_MODE=budget bash -c
 gate rust-workspace env LIVE_PRODUCTION_PROVENANCE_EVIDENCE_DIR="$ROOT/var/completion-02/full-suite-provenance" "$SUP" --timeout-ms 900000 --grace-ms 10000 -- cargo test --locked --no-fail-fast --workspace -- --test-threads=1
 gate harness-unit "$SUP" --timeout-ms 180000 --grace-ms 10000 -- node --test --test-concurrency=1 scripts/target/harness/*.test.mjs
 printf 'round_two_finished=%s\n' "$(date -u +%FT%TZ)"
+exit "$failed"

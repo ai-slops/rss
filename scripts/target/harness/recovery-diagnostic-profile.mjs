@@ -7,7 +7,8 @@ export function diagnosticOmissions(value = "") {
   return omitted
 }
 
-export function recoveryDisposition(omitted) {
-  return { status: omitted.length === 0 ? "pass" : "partial", obsClaim: omitted.length === 0,
-    diagnosticOmissions: [...omitted] }
+export function recoveryDisposition(omitted, unavailable = []) {
+  const complete = omitted.length === 0 && unavailable.length === 0
+  return { status: complete ? "pass" : "partial", obsClaim: complete,
+    diagnosticOmissions: [...omitted], requiredUnavailable: [...unavailable] }
 }

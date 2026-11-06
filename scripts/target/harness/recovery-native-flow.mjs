@@ -76,8 +76,7 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
       commandId: plugin.duplicateCommandId, outcome: plugin.duplicateResult })
 
     if (!omissions.includes("freezePublisher")) {
-      phase = "freezePublisher"
-      await issue(faults, ++commandId, "freezePublisher", "externalProcessRequired", 4_000)
+      phase = "receiverDataFreeze"
       await issue(faults, ++commandId, "pauseActionDispatch", "paused")
       const beforeFreezeCount = number(plugin.restartExecutionCount)
       const beforeFreezeReceiver = (await server.api.recoveryStatus(source.id)).receiver
@@ -98,7 +97,7 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
         (status) => status.receiver.continuityGeneration !== beforeFreezeReceiver.continuityGeneration)
       await bridge.retirePreviousPeer()
       plugin = await readJson(faults.reportFile)
-      faultMatrix.push({ kind: "freezePublisher", result: "dataPausedControllerOnlineRecovered",
+      faultMatrix.push({ kind: "receiverDataFreeze", result: "dataPausedControllerOnlineRecovered",
         droppedDatagrams: bridge.stats().droppedData - beforeFreezeDrops,
         restartExecutionsBefore: beforeFreezeCount, restartExecutionsAfter: number(plugin.restartExecutionCount),
         generationBefore: beforeFreezeReceiver.continuityGeneration,
@@ -227,7 +226,7 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
     snapshot = await server.api.snapshot()
     assert.equal(snapshot.project.outputs.length, baseline.outputs)
     assert.equal(snapshot.program.programRevision, baseline.programRevision)
-    const report = { schemaVersion: 1, ...recoveryDisposition(omissions), nativeExecution: true,
+    const report = { schemaVersion: 1, ...recoveryDisposition(omissions, ["publisherTransportFreeze"]), nativeExecution: true,
       sourceId: source.id, initialReceiver: healthy.receiver, recoveredReceiver: recovered.receiver,
       policyVersion: restored.after.policyVersion, strictMedia,
       exhaustedAttempts: exhausted.retry.attempts, restartExecutionCount: number(plugin.restartExecutionCount),

@@ -1,0 +1,102 @@
+{
+  "schemaVersion": 1,
+  "status": "failed_native_acceptance",
+  "agentPublicationPerformed": false,
+  "rootOwnsIntegrationAndPublication": true,
+  "source": {
+    "nativeFixes": "2a7fdf6b741057e46aae18804dc5801804da48fe",
+    "sourceRecovery": "9a07ef4beda93505a4c0d50485bc3c5f9df5df62",
+    "initialNativeRun": "e81489d583ce6347a4d85fd9e55c51f2845a3115",
+    "correctedRustAndBrowserRun": "014599ed87dba9fd12dc3d6ab7064938b5cf7f64",
+    "retainedRecordingAndRssRun": "16aca0ec6f9501038be75843f272867d26a1d55e",
+    "finalCanonicalNativeRun": "1228a8d4a612e2b959eff64ff8b3722f84233b08",
+    "verifierNamingCleanup": "2e3e76c98ad662f60b632e71f41d40b402f117e6",
+    "productionBlobsMatchSourceRecovery": true
+  },
+  "environment": {
+    "ubuntu": "24.04.5",
+    "kernel": "6.8.0-147-generic",
+    "rust": "1.91.1",
+    "node": "24.18.1",
+    "npm": "11.16.0",
+    "gstreamer": "1.24.2",
+    "rswebrtc": "0.14.3-RELEASE",
+    "ffmpeg": "6.1.1-3ubuntu5",
+    "obs": "30.0.2.1-3build1",
+    "qt": "6.4.2",
+    "playwright": "1.56.1",
+    "chromium": "141.0.7390.37",
+    "chromiumBuild": "1194",
+    "virtualCpus": 4,
+    "memoryMiB": 8192,
+    "sameRetainedOverlay": true,
+    "aptMirrorSelected": false
+  },
+  "gates": [
+    { "id": "native-build", "status": "passed", "artifact": "var/completion/results.tsv" },
+    { "id": "qt-libobs-ctest", "status": "passed", "passed": 10, "failed": 0, "artifact": "var/completion-08/ctest.log" },
+    { "id": "owner-loss-reaping", "status": "passed", "tests": 8, "nativeOutcomes": 11, "strictEsrchPreserved": true, "artifact": "var/completion/lifecycle.log" },
+    { "id": "srt-network", "status": "passed", "strictDecodedVideoFrames": 150, "artifact": "var/completion/media-network.log" },
+    { "id": "native-epoch-admission-timing", "status": "passed_after_fixture_packetization", "assertionsChanged": false, "artifact": "var/completion-04/rust-workspace.log" },
+    { "id": "native-browser-webrtc", "status": "passed", "videoDimensions": [960, 540], "connectedPeers": 3, "privateAudioPacketsObserved": 4, "externalIceClaim": false, "artifact": "var/browser-completion-01/media-stats.json" },
+    { "id": "target-drivers", "status": "passed", "passed": 63, "failed": 0, "skipped": 0, "obsMediaSubstitution": false, "artifact": "var/completion-07/target-drivers.log" },
+    { "id": "frontend-tests", "status": "passed", "passed": 38, "artifact": "var/completion/web-tests.log" },
+    { "id": "format-clippy", "status": "passed", "artifact": "var/completion-08/results.tsv" },
+    { "id": "obs-audio-content", "status": "failed", "exit": 1, "programRms": 0.000005815293113410987, "minimumFixtureRms": 0.001, "artifact": "var/completion-08/obs-rehearsal.log" },
+    { "id": "obs-full-recovery", "status": "failed", "exit": 1, "recoveredCleanRms": 0.0000036283144492204986, "usableAudioClaim": false, "artifact": "var/completion-08/recovery-full.log" },
+    { "id": "clean-reconnect-provenance", "status": "failed", "exit": 101, "observedGenerations": [1], "requiredGenerations": [1, 2], "artifact": "var/completion-04/rust-workspace.log" },
+    { "id": "program-recording", "status": "failed", "exit": 101, "observedSegments": 1, "minimumSegments": 2, "artifact": "var/completion-05/program-recording.log" },
+    { "id": "drift-rss-recording", "status": "failed", "exit": 101, "durationSeconds": 180, "programFrameGrowth": 5409, "observedRssGrowthKiB": 36028, "maxVideoQueueNs": 801203363, "maxAudioQueueNs": 961460101, "overallSoakPass": false, "emptyRecordedFragment": true, "artifact": "var/completion-05/drift-rss.log" },
+    { "id": "publisher-only-freeze", "status": "unavailable", "reason": "privateFixtureHookReturnsExternalProcessRequiredWithoutFreezingPublisher", "receiverDataFreezeIsSameBridgeMechanismAsDrop": true }
+  ],
+  "nativeSafetyProfiles": {
+    "status": "partial",
+    "obsClaim": false,
+    "exit": 1,
+    "allInitialStrictMediaChecksFailed": true,
+    "fencesArtifact": "var/recovery-completion-21/recovery-report.json",
+    "budgetArtifact": "var/recovery-completion-22/recovery-report.json",
+    "controlsArtifact": "var/recovery-completion-23/recovery-report.json",
+    "observedControlChecks": [
+      "missingWrongAndWrongSourceAuthorization401",
+      "queuedManualStopCancelsHeldAction",
+      "stoppedRemoteRetry409",
+      "deadObsReportedOfflineWithoutProcessRestartClaim",
+      "freshObsNoBackendMediaResumeWithoutPluginUiStoppedClaim",
+      "freshControllerProcessCannotArmFromRunningPayload",
+      "staleProcessPollIntent409",
+      "changedDuplicate409AndExactDuplicateSameResponse",
+      "rotatedControllerRejectsOldToken401",
+      "threeAttemptsAndBoundedOneTwoFourSecondBackoff",
+      "concurrentDuplicateManualRetryResetsBudgetOnce",
+      "controllerReconnectAndLeaseExpiry",
+      "maintenanceSuppressesActions",
+      "sourceDisabledSuppressesActionsWithMaintenanceOff",
+      "serverRestartPreservesBudgetAndFencesActionsUnderMaintenance"
+    ]
+  },
+  "runtime": {
+    "status": "stopped",
+    "lastQemuPid": 18229,
+    "stoppedAt": "2026-11-06T00:39:24Z",
+    "runnerExit": 1,
+    "ownedLockAvailable": true,
+    "managedServiceRegistrationPresent": false,
+    "backingSha256": "6a81c37564db9b1ee84e141922625e1d7c5b389b99bb3c572e0243607d5bb4d2"
+  },
+  "privateEvidence": {
+    "published": false,
+    "archiveStore": "retained-verifier-private-archive-directory",
+    "finalArchive": "native-completion-evidence-08.tar.gz",
+    "sha256": "7567a369008851f14913c47fa6cb59ac4220b3d5cb9be80e36eeca0505b8abec",
+    "rawMediaArchive": "native-completion-evidence-05.tar.gz",
+    "rawMediaArchiveSha256": "f92f36318d507dbc52d5e8f93d17474bdb49a2d4c61e28c31c387dc0f56afe89"
+  },
+  "externalAcceptance": {
+    "physicalLaptop": "notRun_noSpecifiedTarget",
+    "externalIce": "notRun_noTargetNetworkOrApprovedUdpTurnPath",
+    "physicalCaptureAndHardwareEncoding": "notRun_noDevicesOrTargetDriverProfile",
+    "editorApplicationImport": "notRun_targetEditorUnspecified",
+    "providerBroadcast": "notRun_notAuthorizedAndNoTestProviderTarget"
+  }
+}

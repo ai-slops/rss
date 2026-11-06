@@ -24,6 +24,14 @@ cmake --install integrations/obs-live-production/build \
 The install step directly stages the layout expected by the rehearsal:
 `bin/64bit` and `data/obs-plugins/obs-live-production`.
 
+CTest also includes a real libobs audio-root regression. It initializes a small
+software-rendered video context, emits 440/880 Hz on separate mixes and requires
+absolute RMS/tone amplitude with negligible cross-mix leakage. It uses `DISPLAY`
+when supplied or executes through `xvfb-run -a`; install Xvfb/xauth on a headless
+test host. No physical audio device is required. Private fixture sources claim
+only unused audio-root channels above channel 0 and remove their exact roots on
+teardown; an auxiliary video view alone is not part of OBS's global audio mix.
+
 ## Publisher bundle
 
 Each sender bundle follows `schemas/publisher-bundle.schema.json`. It contains

@@ -112,13 +112,13 @@ private:
     while (!stop_.load()) {
       const uint64_t now = os_gettime_ns();
       if (now >= next_video) {
-        output_video(next_video);
+        output_video(next_video - start);
         next_video += video_interval;
         if (next_video + video_interval * 4 < now)
           next_video = now + video_interval;
       }
       if (now >= next_audio) {
-        output_audio(next_audio);
+        output_audio(next_audio - start);
         next_audio += audio_interval;
         if (next_audio + audio_interval * 4 < now)
           next_audio = now + audio_interval;

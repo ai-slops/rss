@@ -138,6 +138,7 @@ async function startSender(processes, root, directory, port, label) {
 async function startFiniteSender(processes, root, directory, port) {
   return processes.spawn("recovery-finite-sender", "gst-launch-1.0", ["-q", "-e", "mpegtsmux", "name=mux", "alignment=7",
     "!", "tee", "name=drain", "drain.", "!", "queue", "!", "srtsink", `uri=srt://127.0.0.1:${port}?mode=caller`, "wait-for-connection=true", "auto-reconnect=false",
+    "drain.", "!", "queue", "!", "filesink", `location=${join(directory, "strict-source.ts")}`,
     "drain.", "!", "queue", "!", "fakesink", "sync=true", "ts-offset=500000000",
     "videotestsrc", "is-live=true", "num-buffers=150", "pattern=ball", "!", "video/x-raw,width=640,height=360,framerate=30/1", "!",
     "videoconvert", "!", "video/x-raw,format=I420", "!", "x264enc", "tune=zerolatency", "key-int-max=30", "bitrate=1000",
@@ -179,9 +180,12 @@ async function proveStrictCalibration(processes, root, directory, supervisor) {
   const sender = await startFiniteSender(processes, root, directory, port)
   await processes.wait(sender, 15_000); await processes.wait(receiver, 15_000)
   const evidence = probe(path, supervisor, true)
+  const source = probe(join(directory, "strict-source.ts"), supervisor, true)
   assert(evidence.videoFrames >= 140 && evidence.audioBuffers > 100)
   assert.equal(evidence.videoFrames, 150)
-  return evidence
+  assert.equal(evidence.videoFrames, source.videoFrames)
+  assert.equal(evidence.audioBuffers, source.audioBuffers)
+  return { ...evidence, sourceFrameCounts: { video: source.videoFrames, audio: source.audioBuffers } }
 }
 
 async function stopSenderGracefully(processes, sender, mediaPath, resume) {

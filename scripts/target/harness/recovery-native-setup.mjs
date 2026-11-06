@@ -21,7 +21,7 @@ export async function startRecoveryFixture(options, privateDirectory, processes)
     const snapshot = await server.api.snapshot()
     const source = snapshot.project.sources.find(candidate => candidate.name === "Recovery OBS Red 440")
     if (source === undefined) throw new Error("Recovery source creation did not persist")
-    const baseline = { outputs: snapshot.project.outputs.length, programRevision: snapshot.program.programRevision }
+    const baseline = { outputs: snapshot.project.outputs.length, programRevision: snapshot.program.programRevision, snapshot }
     const endpoint = await server.api.publishingEndpoint(source.id)
     const policy = await updateRecoveryPolicy(server.api, source.id, { enabled: true, maintenance: false })
     const enrollment = await server.api.enrollRecovery(source.id, false)

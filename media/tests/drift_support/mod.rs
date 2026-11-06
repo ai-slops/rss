@@ -30,7 +30,7 @@ pub struct Fixture {
     pub outputs: OutputManager,
     pub output_id: ManagedOutputId,
     pub audio_route_sequence: u64,
-    _directory: tempfile::TempDir,
+    directory: tempfile::TempDir,
 }
 
 #[derive(Debug)]
@@ -72,7 +72,7 @@ impl Fixture {
             outputs,
             output_id,
             audio_route_sequence,
-            _directory: directory,
+            directory,
         })
     }
 
@@ -132,7 +132,7 @@ impl Fixture {
     }
 
     pub fn recording_directory(&self) -> &std::path::Path {
-        self._directory.path()
+        self.directory.path()
     }
 }
 

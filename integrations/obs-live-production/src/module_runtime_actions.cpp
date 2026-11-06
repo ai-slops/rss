@@ -55,6 +55,12 @@ void ModuleRuntime::run_action(uint64_t intent_epoch) {
 }
 
 void ModuleRuntime::fault_drop_publisher() { publisher_.stop(); }
+std::optional<uint64_t> ModuleRuntime::fault_freeze_publisher() {
+  return publisher_.freeze_transport();
+}
+void ModuleRuntime::fault_resume_publisher(uint64_t epoch) {
+  publisher_.resume_transport(epoch);
+}
 void ModuleRuntime::fault_pause_controller(bool paused) { client_.pause(paused); }
 void ModuleRuntime::fault_force_restart_failure() {
   publisher_.force_restart_failures(3);

@@ -1,11 +1,13 @@
 #pragma once
 
 #include "config.hpp"
+#include "publisher_transport_fault.hpp"
 
 #include <obs.h>
 
 #include <functional>
 #include <mutex>
+#include <memory>
 #include <string>
 
 namespace live_production {
@@ -22,6 +24,8 @@ public:
   bool initialize(std::string &error);
   bool start(std::string &error);
   void stop();
+  bool freeze_transport();
+  void resume_transport();
 
   const PublisherConfig &config() const { return config_; }
   std::string state() const;
@@ -49,6 +53,7 @@ private:
   obs_encoder_t *audio_encoder_ = nullptr;
   obs_service_t *service_ = nullptr;
   obs_output_t *output_ = nullptr;
+  std::unique_ptr<PublisherTransportFault> transport_fault_;
 };
 
 }

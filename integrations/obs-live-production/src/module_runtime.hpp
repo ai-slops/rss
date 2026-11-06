@@ -61,6 +61,8 @@ public:
   ModuleRuntimeSnapshot snapshot() const;
 
   void fault_drop_publisher();
+  std::optional<uint64_t> fault_freeze_publisher();
+  void fault_resume_publisher(uint64_t epoch);
   void fault_pause_controller(bool paused);
   void fault_force_restart_failure();
   bool fault_pause_action_dispatch(bool paused);

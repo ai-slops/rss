@@ -6,6 +6,7 @@ cd "$ROOT"
 umask 077
 mkdir -p var/de4-native/runtime
 source scripts/ubuntu-env.sh
+export CARGO_TARGET_DIR="$HOME/review88/target"
 export LIBGL_ALWAYS_SOFTWARE=1 XDG_RUNTIME_DIR="$ROOT/var/de4-native/runtime"
 unset DISPLAY LIVE_PRODUCTION_OBS_METER_DIAGNOSTIC LIVE_PRODUCTION_RECOVERY_DIAGNOSTIC_MODE LIVE_PRODUCTION_RECOVERY_DIAGNOSTIC_OMIT
 test -z "$(GIT_MASTER=1 git status --porcelain)"

@@ -10,13 +10,14 @@ unset DISPLAY
 test -z "$(GIT_MASTER=1 git status --porcelain)"
 GIT_MASTER=1 git rev-parse HEAD > var/completion-04/source-head.txt
 : > var/completion-04/results.tsv
+failed=0
 SUP="$ROOT/target/debug/live-production-supervisor"
 gate() {
   local name=$1 result=0 start
   shift; start=$(date -u +%FT%TZ)
   "$@" > "var/completion-04/$name.log" 2>&1 || result=$?
   printf '%s\t%s\t%s\t%s\n' "$name" "$result" "$start" "$(date -u +%FT%TZ)" | tee -a var/completion-04/results.tsv
-  if [ "$result" != 0 ]; then tail -n 18 "var/completion-04/$name.log"; fi
+  if [ "$result" != 0 ]; then failed=1; tail -n 18 "var/completion-04/$name.log"; fi
 }
 dpkg-query -W > var/completion-04/packages-before.tsv
 gate chromium-install timeout 300 node web/node_modules/playwright/cli.js install --with-deps chromium
@@ -32,3 +33,4 @@ GIT_MASTER=1 git status --porcelain > var/completion-04/source-status.txt
 { date -u +%FT%TZ; cat /proc/sys/kernel/random/boot_id; rustc --version; cargo --version; node --version; npm --version; pkg-config --modversion gstreamer-1.0 libobs Qt6Widgets; obs --version; } > var/completion-04/final-versions.txt
 ps -eo pid,ppid,stat,comm > var/completion-04/processes-after.txt
 printf 'round_four_finished=%s\n' "$(date -u +%FT%TZ)"
+exit "$failed"

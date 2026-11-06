@@ -12,12 +12,13 @@ test -z "$(GIT_MASTER=1 git status --porcelain)"
 GIT_MASTER=1 git rev-parse HEAD > var/completion-05/source-head.txt
 SUP="$ROOT/target/debug/live-production-supervisor"
 : > var/completion-05/results.tsv
+failed=0
 gate() {
   local name=$1 result=0 start
   shift; start=$(date -u +%FT%TZ)
   "$@" > "var/completion-05/$name.log" 2>&1 || result=$?
   printf '%s\t%s\t%s\t%s\n' "$name" "$result" "$start" "$(date -u +%FT%TZ)" | tee -a var/completion-05/results.tsv
-  if [ "$result" != 0 ]; then tail -n 18 "var/completion-05/$name.log"; fi
+  if [ "$result" != 0 ]; then failed=1; tail -n 18 "var/completion-05/$name.log"; fi
 }
 gate cmake-build cmake --build var/obs-plugin-build --parallel 2
 gate ctest env QT_QPA_PLATFORM=offscreen timeout 180 ctest --test-dir var/obs-plugin-build --output-on-failure
@@ -34,8 +35,10 @@ for file in var/completion-05/media/*/*/*.mkv; do
   sha256sum "$file" >> var/completion-05/media-sha256.txt
   result=0; ffprobe -v error -show_streams -show_format -of json "$file" > "$base.ffprobe.json" 2> "$base.ffprobe.stderr" || result=$?
   printf '%s\tffprobe\t%s\n' "$relative" "$result" >> var/completion-05/media-results.tsv
+  if [ "$result" != 0 ]; then failed=1; fi
   result=0; "$SUP" --timeout-ms 30000 --grace-ms 5000 -- ffmpeg -v error -xerror -i "$file" -f null - > "$base.decode.log" 2>&1 || result=$?
   printf '%s\tstrict-decode\t%s\n' "$relative" "$result" >> var/completion-05/media-results.tsv
+  if [ "$result" != 0 ]; then failed=1; fi
 done
 gate fmt cargo fmt --all -- --check
 gate clippy cargo clippy --locked --workspace --all-targets -- -D warnings
@@ -43,3 +46,4 @@ sha256sum var/obs-plugin-stage/bin/64bit/obs-live-production.so target/release/l
 GIT_MASTER=1 git status --porcelain > var/completion-05/source-status.txt
 ps -eo pid,ppid,stat,comm > var/completion-05/processes-after.txt
 printf 'round_five_finished=%s\n' "$(date -u +%FT%TZ)"
+exit "$failed"

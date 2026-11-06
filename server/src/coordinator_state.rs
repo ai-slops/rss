@@ -13,6 +13,7 @@ use crate::{
         AudioRouteSnapshot, OutputStatusSnapshot, PreviewSnapshot, ProgramSnapshot,
         ProjectSnapshot, Snapshot,
     },
+    source_recovery::SourceRecoveryManager,
     store::Store,
 };
 
@@ -26,8 +27,7 @@ impl Owner {
         let store = Store::open(&database).map_err(AppError::Internal)?;
         let plugins =
             crate::plugins::PluginRegistry::trusted(&store).map_err(AppError::Internal)?;
-        let recovery = crate::source_recovery::SourceRecoveryManager::load(&store)
-            .map_err(AppError::Internal)?;
+        let recovery = SourceRecoveryManager::load_for_run(&store, media.engine_run_id())?;
         let project = store.load().map_err(AppError::Internal)?;
         for source in &project.sources {
             let credential = store

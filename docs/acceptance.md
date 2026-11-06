@@ -86,6 +86,23 @@ See [the sanitized exact-source receipt](native-completion-2026-11-06.md) and
 correction integration, publication and any later promotion; no main push,
 deployment or broadcast occurred.
 
+## Continuing persisted-recovery review, 2026-11-06
+
+Exact root-delivered `88e0cd7` is integrated locally with preserved failed verifier
+`b2c6e22`. Native recovery Rust cases pass 13/13; a live backend/GStreamer probe
+shows startup old-action cancellation, old duplicate rejection and late ACK
+ignored after actual new-engine generation-2 media, with retry count retained.
+Program fences compare real content across restart and still enforce raw revision
+within an engine. The six-case AAC ownership matrix exposes complete-unit loss
+despite strict decoder exit zero; sender drain preserves all measured V/A frames,
+receiver-only waiting does not. Strict calibration now matches sender/receiver
+audio counts. The unchanged Program recorder still fails with a retained native
+Matroska colorimetry/codec-data renegotiation rejection and empty fragment.
+**Overall task/native acceptance remains open and failed.** Genuine OBS controls
+are partial, silent audio and prior failures remain, and the exact minimal
+publisher-freeze production interface is requested, not faked. See
+[bounded progress and private evidence references](recovery-review-progress-2026-11-06.md).
+
 ## Delegated native Ubuntu verification, 2026-10-28
 
 The separate `live-ubuntu-validation` workspace booted one owned Ubuntu 24.04.5

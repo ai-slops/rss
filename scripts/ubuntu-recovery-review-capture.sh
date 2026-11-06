@@ -12,7 +12,7 @@ CAPTURE=var/recovery-review-caps/replay-capture
 if [ -d "$CAPTURE" ]; then CAPTURE=var/recovery-review-caps/event-capture; fi
 mkdir "$CAPTURE"
 result=0
-LIVE_PRODUCTION_FIXED_CAPS_DIAGNOSTIC=0 GST_DEBUG=matroskamux:5,splitmuxsink:5,x264enc:4 \
+LIVE_PRODUCTION_FIXED_CAPS_DIAGNOSTIC=legacy GST_DEBUG=matroskamux:5,splitmuxsink:5,x264enc:4 \
   target/debug/live-production-supervisor --timeout-ms 15000 --grace-ms 5000 -- cargo test --locked -p live-production-media --test runtime_recording_contract -- --nocapture > "$CAPTURE/original.log" 2>&1 &
 owned=$!
 trap 'kill -TERM "$owned" 2>/dev/null || true; wait "$owned" || true' EXIT

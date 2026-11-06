@@ -10,7 +10,7 @@ SUP="$ROOT/target/debug/live-production-supervisor"
 failed=0
 : > var/recovery-review-caps/results.tsv
 for profile in original fixed; do
-  diagnostic=0; [ "$profile" = original ] || diagnostic=1
+  diagnostic=legacy; [ "$profile" = original ] || diagnostic=1
   result=0
   LIVE_PRODUCTION_FIXED_CAPS_DIAGNOSTIC="$diagnostic" LIVE_PRODUCTION_MEDIA_EVIDENCE_DIR="$ROOT/var/recovery-review-caps/$profile" GST_DEBUG=matroskamux:5,splitmuxsink:5,x264enc:4 \
     "$SUP" --timeout-ms 180000 --grace-ms 10000 -- cargo test --locked -p live-production-media --test runtime_recording_contract -- --nocapture > "var/recovery-review-caps/$profile.log" 2>&1 || result=$?

@@ -1,5 +1,11 @@
 # Root relay: actual Ubuntu de4 replay
 
+Final measured disposition and complete command/evidence map:
+`docs/de4-native-replay-2026-11-06.md`. The chronology below is retained; its
+earlier “continuing” statements are not the final state. The full flow ultimately
+reaches partial solely for unavailable publisher-only freeze. EOS failure remains
+unresolved despite a later passing soak.
+
 Production checkpoint: `de4b80058871f4ec5f138ddb25cb68d05c5bc718`.
 First executed clean integration: `81e674c` (full SHA retained in private
 `var/de4-native/source-head.txt`). Its `server/src`, `media/src` and

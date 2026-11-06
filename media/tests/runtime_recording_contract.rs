@@ -18,8 +18,8 @@ use live_production_media::{
 #[test]
 fn dynamic_take_records_real_program_without_restarting_consumer() -> anyhow::Result<()> {
     // Given
-    let caps_diagnostic = std::env::var("LIVE_PRODUCTION_FIXED_CAPS_DIAGNOSTIC")
-        .unwrap_or_default();
+    let caps_diagnostic =
+        std::env::var("LIVE_PRODUCTION_FIXED_CAPS_DIAGNOSTIC").unwrap_or_default();
     let pipeline = match caps_diagnostic.as_str() {
         "1" => program_pipeline().replace(
             "video/x-raw,format=I420,width=960,height=540,framerate=30/1",

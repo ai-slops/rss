@@ -18,17 +18,21 @@ use live_production_media::{
 #[test]
 fn dynamic_take_records_real_program_without_restarting_consumer() -> anyhow::Result<()> {
     // Given
-    let fixed_caps_diagnostic = std::env::var("LIVE_PRODUCTION_FIXED_CAPS_DIAGNOSTIC")
-        .is_ok_and(|value| value == "1");
-    let pipeline = if fixed_caps_diagnostic {
-        program_pipeline().replace(
+    let caps_diagnostic = std::env::var("LIVE_PRODUCTION_FIXED_CAPS_DIAGNOSTIC")
+        .unwrap_or_default();
+    let pipeline = match caps_diagnostic.as_str() {
+        "1" => program_pipeline().replace(
             "video/x-raw,width=960,height=540,framerate=30/1",
             "video/x-raw,format=I420,colorimetry=bt601,chroma-site=jpeg,width=960,height=540,framerate=30/1",
-        )
-    } else {
-        program_pipeline().to_owned()
+        ),
+        "format" => program_pipeline().replace(
+            "video/x-raw,width=960,height=540,framerate=30/1",
+            "video/x-raw,format=I420,width=960,height=540,framerate=30/1",
+        ),
+        "" | "0" => program_pipeline().to_owned(),
+        _ => anyhow::bail!("unknown caps diagnostic profile"),
     };
-    eprintln!("fixed_caps_diagnostic={fixed_caps_diagnostic}");
+    eprintln!("caps_diagnostic_profile={caps_diagnostic}");
     let engine = MediaEngine::spawn(EngineConfig::new(
         &pipeline,
         std::iter::empty::<(OutputId, &str)>(),

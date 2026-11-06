@@ -194,11 +194,15 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
     assert.equal(number((await readJson(faults.reportFile)).restartExecutionCount), disabledCount)
     assert.equal((await server.api.recoveryStatus(source.id)).retry.attempts, disabledAttempts)
     snapshot = await server.api.snapshot(); const disabled = snapshot.project.sources.find((candidate) => candidate.id === source.id)
+    const enabledHandover = bridge.authorizeHandover(45000)
     await server.api.command("source.configure", source.id, { source: { ...disabled, enabled: true } },
       { snapshot, expectedRevision: snapshot.project.revision })
     bridge.resumeData()
     await waitForRecoveredMedia(server.api, source.id, (await server.api.recoveryStatus(source.id)).receiver)
-    faultMatrix.push({ kind: "setSourceDisabled", result: "sourceDisabledZeroActions" })
+    bridge.cancelHandover()
+    const sourceHandover = await enabledHandover
+    await bridge.retirePreviousPeer()
+    faultMatrix.push({ kind: "setSourceDisabled", result: "sourceDisabledZeroActions", bridgeHandover: sourceHandover })
 
     phase = "retryExhaustion"
     await issue(faults, ++commandId, "exhaustRetryBudget", "armedThreeFailures")

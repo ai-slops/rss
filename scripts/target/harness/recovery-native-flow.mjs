@@ -122,15 +122,19 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
       processes.signalNative(obs, "SIGSTOP")
       await waitStatus(server.api, source.id,
         (status) => status.controller.online === false && status.receiver.state === "controller_offline", 12_000)
+      const resumeHandover = bridge.authorizeHandover(60000)
       processes.signalNative(obs, "SIGCONT")
       plugin = await waitReport(faults.reportFile,
         (report) => number(report.pollSeq) > beforeProcessStopPoll, 15_000)
       await waitStatus(server.api, source.id, (status) => status.controller.online === true, 15_000)
       const resumedProcess = await waitForRecoveredMedia(server.api, source.id, beforeProcessStopReceiver)
+      bridge.cancelHandover()
+      const processHandover = await resumeHandover
+      await bridge.retirePreviousPeer()
       plugin = await readJson(faults.reportFile)
       faultMatrix.push({ kind: "obsProcessSigstop", result: "offlineThenResumedUsableAv",
         processRestartClaim: false, restartExecutionsBefore: beforeProcessStopCount,
-        restartExecutionsAfter: number(plugin.restartExecutionCount), receiver: resumedProcess.receiver })
+        restartExecutionsAfter: number(plugin.restartExecutionCount), bridgeHandover: processHandover, receiver: resumedProcess.receiver })
     }
 
     phase = "authorizationAndServerRestart"
@@ -249,7 +253,7 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
     })
   } finally {
     await processes.stopAll()
-    if (bridge !== null) await bridge.close()
+    if (bridge !== null) { bridge.cancelHandover(); await bridge.close() }
   }
 
   async function issue(faults, id, kind, result, durationMs = null) {

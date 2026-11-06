@@ -105,13 +105,15 @@ the plugin report labels them `serverDirected` rather than inventing outcomes.
 maintenance and source-disable are labelled `awaitingHttpEvidence`; they are
 not reported verified until the harness supplies actual HTTP/server evidence.
 
-On Linux, `freezePublisher` now SIGSTOPs the independent publisher's newly
-created `obs-ffmpeg-mux` child through a validated pidfd. It excludes pre-existing,
-foreign, nested and ambiguous children, verifies PPID/executable/start ticks,
-and acknowledges `executed` only after signalling that exact child. Missing
-ownership reports `publisherTransportNotIdentified`, not success. Qt/controller
-polling remains live. A finite epoch-fenced timer resumes within at most 30
-seconds; manual Stop and destruction resume before releasing the output.
+`freezePublisher` gates the independent Publisher's module-owned in-process
+MPEG-TS/SRT writer through that exact output's procedure handler. It finishes
+in-flight mux/AVIO work and confirms no send is active within 500 ms before
+acknowledging `executed`. Timeout reports `publisherTransportNotQuiescent`.
+Packets and resume operations are epoch-fenced; frozen admission is bounded and
+resume waits for an IDR. Qt/controller processing and other publishers remain
+live. A finite instance-fenced timer resumes within at most 30 seconds; manual
+Stop quiesces, interrupts and joins only its own writer. No child process,
+arbitrary thread, source mute or global packet interposition is involved.
 
 This is independent of the harness's network bridge DATA pause. The verifier
 must observe stalled media, online controller, recreation/new generation and

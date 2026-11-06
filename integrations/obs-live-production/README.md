@@ -9,7 +9,10 @@ automated rehearsal fixture is restricted to loopback.
 ## Build and package
 
 Build on the Ubuntu OBS host with the OBS 30.0.2 development packages and the
-`obs-x264`, `obs-ffmpeg`, and `rtmp-services` modules available.
+`obs-x264` and `obs-ffmpeg` encoder modules available. The module-owned in-process
+MPEG-TS/SRT output also needs native FFmpeg format/codec/util and libsrt
+development packages discoverable through pkg-config. It does not require a
+custom RTMP service or a patched system OBS output backend.
 
 ```sh
 cmake -S integrations/obs-live-production \
@@ -39,8 +42,9 @@ the scoped SRT passphrase and stream ID and must be a regular file with mode
 `0600`. The plugin never includes the target host, port, URL, passphrase, or
 stream ID in its report or explicit log messages.
 
-The bundle's `bufferMs` is converted to FFmpeg's microsecond SRT `latency`
-query value. For example, `120` becomes `latency=120000`.
+The bundle's `bufferMs` is applied directly to libsrt's millisecond latency
+option. For example, `120` configures 120 ms. The owned backend does not assemble
+a credential-bearing FFmpeg URL.
 
 Create a bundle for one input that already exists on the Live Production
 server with the repository CLI. Keep the operator password in an owner-only

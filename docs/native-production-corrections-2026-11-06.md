@@ -1,5 +1,9 @@
 # Native failure corrections for same-verifier replay
 
+Historical de4 receipt: genuine replay confirmed the audio/provenance corrections
+but found that the PID seam did not match stock OBS30's in-process backend, plus
+an intermittent EOS failure. See [the focused transport/EOS correction](transport-eos-corrections-2026-11-06.md).
+
 ## Checkpoint and authority
 
 This production correction branch is based on

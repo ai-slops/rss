@@ -1,7 +1,6 @@
 #include "fixture.hpp"
 
 #include "report.hpp"
-#include "fixture_source.hpp"
 
 #include <obs-module.h>
 #include <util/platform.h>
@@ -192,7 +191,7 @@ void FixtureController::stop() {
   negatives_.clear();
   primaries_.clear();
   for (obs_source_t *source : fixture_sources_)
-    release_fixture_source(source);
+    obs_source_release(source);
   fixture_sources_.clear();
   finish_transition();
 }

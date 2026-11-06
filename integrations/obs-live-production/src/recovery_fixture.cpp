@@ -117,7 +117,7 @@ bool RecoveryFixture::start_from_environment(std::string &error) {
   fixture_source_ = create_fixture_source(source, bundle, error);
   if (!fixture_source_) return false;
   if (!runtime_.configure(bundle_path_, error)) {
-    release_fixture_source(fixture_source_);
+    obs_source_release(fixture_source_);
     fixture_source_ = nullptr;
     return false;
   }
@@ -136,7 +136,7 @@ void RecoveryFixture::execute_next() {
     active_ = false;
     std::string error;
     runtime_.manual_stop(error);
-    if (fixture_source_) release_fixture_source(fixture_source_);
+    if (fixture_source_) obs_source_release(fixture_source_);
     fixture_source_ = nullptr;
     return;
   }
@@ -260,7 +260,7 @@ void RecoveryFixture::stop() {
   std::string error;
   runtime_.manual_stop(error);
   write_report("stopped");
-  if (fixture_source_) release_fixture_source(fixture_source_);
+  if (fixture_source_) obs_source_release(fixture_source_);
   fixture_source_ = nullptr;
 }
 

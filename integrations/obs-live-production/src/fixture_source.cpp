@@ -112,13 +112,13 @@ private:
     while (!stop_.load()) {
       const uint64_t now = os_gettime_ns();
       if (now >= next_video) {
-        output_video(next_video - start);
+        output_video(next_video);
         next_video += video_interval;
         if (next_video + video_interval * 4 < now)
           next_video = now + video_interval;
       }
       if (now >= next_audio) {
-        output_audio(next_audio - start);
+        output_audio(next_audio);
         next_audio += audio_interval;
         if (next_audio + audio_interval * 4 < now)
           next_audio = now + audio_interval;
@@ -196,13 +196,7 @@ obs_source_t *create_fixture_source(const FixtureSourceCommand &command,
     return nullptr;
   }
   obs_source_set_audio_mixers(source, 1u << command.audio_mix_index);
-  obs_source_inc_active(source);
   return source;
-}
-
-void release_fixture_source(obs_source_t *source) {
-  obs_source_dec_active(source);
-  obs_source_release(source);
 }
 
 }

@@ -17,6 +17,7 @@ use live_production_media::{
 };
 
 mod decode;
+mod eos;
 mod sender;
 pub use decode::decode_recordings;
 pub use sender::{free_udp_port, rss_kib, sender};
@@ -126,8 +127,18 @@ impl Fixture {
     }
 
     pub fn finish(&self) -> anyhow::Result<Vec<RecordingSegment>> {
-        self.outputs.stop(&self.output_id)?;
+        if std::env::var_os("LIVE_PRODUCTION_EOS_OBSERVE").is_some() {
+            eos::observe_stop(&self.outputs, &self.output_id)?;
+        } else {
+            self.outputs.stop(&self.output_id)?;
+        }
         wait_for_stopped(&self.outputs, &self.output_id)?;
+        if std::env::var_os("LIVE_PRODUCTION_EOS_OBSERVE").is_some() {
+            eprintln!(
+                "drift_stopped_state_observed snapshot={:?}",
+                self.outputs.snapshot(&self.output_id)
+            );
+        }
         self.outputs.recordings(&self.output_id).map_err(Into::into)
     }
 

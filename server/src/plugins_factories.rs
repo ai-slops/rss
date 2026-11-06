@@ -42,6 +42,7 @@ pub(crate) struct OutputFactoryRequest<'a> {
     pub(crate) store: &'a Store,
     pub(crate) state_directory: &'a Path,
     pub(crate) engine_run_id: &'a EngineRunId,
+    pub(crate) media: &'a crate::media_bridge::MediaBridge,
 }
 
 type SourceFactory = for<'a> fn(SourceFactoryRequest<'a>) -> Result<Source>;
@@ -113,12 +114,5 @@ fn create_source(request: SourceFactoryRequest<'_>) -> Result<Source> {
 }
 
 fn register_output(request: OutputFactoryRequest<'_>) -> Result<()> {
-    crate::output::register(
-        request.manager,
-        request.output,
-        request.project,
-        request.store,
-        request.state_directory,
-        request.engine_run_id,
-    )
+    crate::output::register(request)
 }

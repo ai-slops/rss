@@ -5,6 +5,10 @@ use thiserror::Error;
 
 use crate::engine_owner::owner_thread;
 use crate::protocol::{Command, CommandId, CommandKind, EngineEvent, OutputId, TrackId};
+use crate::{
+    source_capture::{SourceCapture, SourceCaptureRegistry},
+    tap::TapChannels,
+};
 
 #[derive(Debug, Clone)]
 pub struct EngineConfig {
@@ -47,16 +51,19 @@ impl EngineConfig {
 pub struct MediaEngine {
     sender: Option<Sender<EngineRequest>>,
     owner: Option<JoinHandle<()>>,
+    source_captures: std::sync::Arc<SourceCaptureRegistry>,
 }
 
 impl MediaEngine {
     pub fn spawn(config: EngineConfig) -> Result<Self, EngineError> {
         let (sender, receiver) = mpsc::channel();
         let (startup_sender, startup_receiver) = mpsc::sync_channel(1);
+        let source_captures = std::sync::Arc::new(SourceCaptureRegistry::default());
+        let owner_source_captures = std::sync::Arc::clone(&source_captures);
         let owner = thread::Builder::new()
             .name("media-engine".to_owned())
             .spawn(move || {
-                owner_thread(&config, &receiver, &startup_sender);
+                owner_thread(&config, &receiver, &startup_sender, owner_source_captures);
             })
             .map_err(EngineError::Spawn)?;
         let startup = startup_receiver
@@ -71,7 +78,13 @@ impl MediaEngine {
         Ok(Self {
             sender: Some(sender),
             owner: Some(owner),
+            source_captures,
         })
+    }
+
+    #[must_use]
+    pub fn source_capture(&self, channels: &TapChannels) -> SourceCapture {
+        self.source_captures.capture(channels)
     }
 
     pub fn execute(&self, command: Command) -> Result<EngineEvent, EngineError> {

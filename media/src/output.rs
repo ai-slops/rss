@@ -9,9 +9,11 @@ use thiserror::Error;
 use crate::protocol::EngineRunId;
 
 pub use crate::output_manager::OutputManager;
+pub use crate::output_tap::MediaTap;
 pub use crate::recording_provenance::{
     RecordingProvenanceGap, RecordingProvenanceInterval, RecordingTrackKind,
 };
+pub use crate::source_capture::SourceCapture;
 
 pub const PROGRAM_VIDEO_CHANNEL: &str = "live-program-video-v1";
 pub const PROGRAM_AUDIO_CHANNEL: &str = "live-program-audio-v1";
@@ -38,33 +40,6 @@ impl OutputId {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MediaTap {
-    video_channel: String,
-    audio_channel: String,
-}
-
-impl MediaTap {
-    pub fn new(video_channel: &str, audio_channel: &str) -> Result<Self, OutputError> {
-        validate_channel(video_channel)?;
-        validate_channel(audio_channel)?;
-        Ok(Self {
-            video_channel: video_channel.to_owned(),
-            audio_channel: audio_channel.to_owned(),
-        })
-    }
-
-    #[must_use]
-    pub fn video_channel(&self) -> &str {
-        &self.video_channel
-    }
-
-    #[must_use]
-    pub fn audio_channel(&self) -> &str {
-        &self.audio_channel
-    }
-}
-
 #[derive(Clone)]
 pub struct RecordingDefinition {
     pub(crate) id: OutputId,
@@ -73,6 +48,7 @@ pub struct RecordingDefinition {
     pub(crate) segment_duration: Duration,
     pub(crate) engine_run_id: Option<String>,
     pub(crate) capture_source_provenance: bool,
+    pub(crate) source_capture: Option<SourceCapture>,
 }
 
 impl RecordingDefinition {
@@ -93,6 +69,7 @@ impl RecordingDefinition {
             segment_duration,
             engine_run_id: None,
             capture_source_provenance: false,
+            source_capture: None,
         })
     }
 
@@ -105,6 +82,13 @@ impl RecordingDefinition {
     #[must_use]
     pub const fn with_source_provenance(mut self) -> Self {
         self.capture_source_provenance = true;
+        self
+    }
+
+    #[must_use]
+    pub fn with_source_capture(mut self, capture: SourceCapture) -> Self {
+        self.capture_source_provenance = true;
+        self.source_capture = Some(capture);
         self
     }
 }
@@ -257,17 +241,10 @@ pub enum OutputError {
     OwnerStopped,
     #[error("output pipeline failed")]
     Pipeline,
+    #[error("output pipeline failed: {0}")]
+    PipelineDetail(String),
     #[error("recording finalization failed")]
     RecordingFinalization,
     #[error("output is not registered")]
     UnknownOutput,
-}
-
-fn validate_channel(value: &str) -> Result<(), OutputError> {
-    let valid = !value.is_empty()
-        && value.len() <= 128
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'));
-    valid.then_some(()).ok_or(OutputError::InvalidTap)
 }

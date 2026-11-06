@@ -46,8 +46,14 @@ pub fn assert_provenance(package: &Value, source: &Value, video: &Value, audio: 
         .collect::<BTreeSet<_>>();
     assert_eq!(generations, BTreeSet::from([1, 2]));
     assert!(intervals.iter().all(|v| v["source_id"] == *source));
-    assert!(intervals.iter().any(|v| v["track_id"] == *video));
-    assert!(intervals.iter().any(|v| v["track_id"] == *audio));
+    for track in [video, audio] {
+        let track_generations = intervals
+            .iter()
+            .filter(|value| value["track_id"] == *track)
+            .filter_map(|value| value["continuity_generation"].as_u64())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(track_generations, BTreeSet::from([1, 2]));
+    }
     assert!(intervals.iter().all(
         |v| decimal(&v["media_start_ns"]).is_some_and(|s| s >= file_start)
             && decimal(&v["media_end_ns"]).is_some_and(|e| e <= file_end)

@@ -150,7 +150,7 @@ export async function runRecoveryNative(options, evidenceDirectory, privateDirec
     phase = "controllerReconnect"
     await issue(faults, ++commandId, "reconnectController", "paused", 1_000)
     const pausedPoll = number((await readJson(faults.reportFile)).pollSeq)
-    await waitReport(faults.reportFile, (report) => number(report.pollSeq) > pausedPoll, 10_000)
+    await waitReport(faults.reportFile, (report) => number(report.pollSeq) >= pausedPoll + 3, 10_000)
     faultMatrix.push({ kind: "reconnectController", result: "pollSequenceAdvanced" })
     await issue(faults, ++commandId, "letControllerLeaseExpire", "paused", 6_000)
     await waitStatus(server.api, source.id, (status) => status.controller.online === false, 10_000)

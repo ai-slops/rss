@@ -172,7 +172,7 @@ export async function runNativeSafety(options, evidenceDirectory, privateDirecto
     const { source, faults, bridge } = fixture
     const initialPlugin = await readJson(faults.reportFile)
     await issue("reconnectController", "paused", 1000)
-    await waitPluginReport(faults.reportFile, value => BigInt(value.pollSeq) > BigInt(initialPlugin.pollSeq), 10000)
+    await waitPluginReport(faults.reportFile, value => BigInt(value.pollSeq) >= BigInt(initialPlugin.pollSeq) + 3n, 10000)
     cases.push({ kind: "controllerReconnect", status: "pass" })
     await issue("letControllerLeaseExpire", "paused", 6000)
     await waitRecoveryStatus(server.api, source.id, value => !value.controller.online, 10000)

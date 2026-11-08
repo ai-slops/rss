@@ -133,3 +133,17 @@ failed. The VM is stopped, its exact child reaped and managed registration remov
 No product rewrite, existing Studio change, protected merge/deploy or public
 broadcast occurred. See [the exact source, root handoff, regression evidence,
 artifacts and remaining gates](ubuntu-obs-verification-2026-10-29.md).
+## Native follow-up diagnostics, 2026-10-29
+
+The retained Ubuntu verifier tested exact primary follow-up
+`1c8d8adffb8d1c48f8b7c2cc39e38e7009f1d7a0` with unchanged product/test blobs.
+**Acceptance remains failed**: clean provenance has no video interval, both plain
+owner-loss lifecycle runs fail ESRCH, and the primary SRT profile remains 0x0 /
+strict-decode exit 69. Both preserved MKVs decode, but all 154 decoded frames have
+luma 16 and the recording video consumer logs generated black frames. The memory
+diagnostic reports distinct parentless objects (`same_layout=false`), not a basis
+for heuristic provenance restoration. One read-only observed lifecycle run
+passes and records a short-lived zombie; it does not override the two plain
+failures. Native build/Clippy and OBS compile/CTest pass, not genuine OBS media.
+The same VM is stopped. Full raw artifacts remain private in `var/followup/`;
+see [the exact source mapping, evidence and root handoff](ubuntu-followup-verification-2026-10-29.md).

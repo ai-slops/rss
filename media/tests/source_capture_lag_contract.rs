@@ -1,3 +1,7 @@
+mod native_evidence;
+#[path = "native_evidence/retain.rs"]
+mod native_retention;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     time::{Duration, Instant},
@@ -63,6 +67,7 @@ fn already_live_ingest_behind_clock_records_with_exact_common_origin() -> anyhow
     let manager = OutputManager::new();
     let output_id = ManagedOutputId::new("lag-source-capture")?;
     let directory = tempfile::tempdir()?;
+    let _evidence = native_retention::RetainOnDrop::new(directory.path(), "lag-source-capture");
     manager.register(OutputDefinition::Recording(
         RecordingDefinition::new(
             output_id.clone(),

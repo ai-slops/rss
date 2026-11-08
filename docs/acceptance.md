@@ -67,6 +67,42 @@ Controlled acceptance is not an external production certification. The internal 
 
 Real OBS/plugin source separation, a target laptop's remote ICE path, platform account auto-start semantics/private test broadcast, hardware encoder performance and intended editor import are unverified until those exact systems are exercised. Controlled software fixtures cannot establish these integrations.
 
+## Executed Ubuntu completion attempt, 2026-11-05/06
+
+The same retained verifier/VM executed exact native-fix `2a7fdf6` plus recovery
+`9a07ef4` ancestry, not config-only main as acceptance. Native CTest 10/10,
+strict owner-loss reaping, 150-frame SRT decode, local Chromium/webrtcsink,
+corrected epoch/admission/timing contracts, 63 target tests and 38 UI tests pass.
+**Overall native acceptance remains failed:** genuine OBS fixture AAC is
+numerical silence under absolute and per-tone validation, clean reconnect
+provenance lacks generation 2, Program recording yields too few segments, and
+the 180-second drift/RSS profile has an empty recording fragment. Actual native
+safety probes are explicitly partial and never promoted to usable-media proof.
+A publisher-only freeze hook is unavailable; receiver bridge DATA pauses are
+not counted as independent physical faults. Raw failed media is preserved,
+the final VM is stopped, and production blobs remain unchanged from `9a07ef4`.
+See [the sanitized exact-source receipt](native-completion-2026-11-06.md) and
+[fixed-field manifest](native-completion-manifest-2026-11-06.json). Root owns
+correction integration, publication and any later promotion; no main push,
+deployment or broadcast occurred.
+
+## Continuing persisted-recovery review, 2026-11-06
+
+Exact root-delivered `88e0cd7` is integrated locally with preserved failed verifier
+`b2c6e22`. Native recovery Rust cases pass 13/13; a live backend/GStreamer probe
+shows startup old-action cancellation, old duplicate rejection and late ACK
+ignored after actual new-engine generation-2 media, with retry count retained.
+Program fences compare real content across restart and still enforce raw revision
+within an engine. The six-case AAC ownership matrix exposes complete-unit loss
+despite strict decoder exit zero; sender drain preserves all measured V/A frames,
+receiver-only waiting does not. Strict calibration now matches sender/receiver
+audio counts. The unchanged Program recorder still fails with a retained native
+Matroska colorimetry/codec-data renegotiation rejection and empty fragment.
+**Overall task/native acceptance remains open and failed.** Genuine OBS controls
+are partial, silent audio and prior failures remain, and the exact minimal
+publisher-freeze production interface is requested, not faked. See
+[bounded progress and private evidence references](recovery-review-progress-2026-11-06.md).
+
 ## Delegated native Ubuntu verification, 2026-10-28
 
 The separate `live-ubuntu-validation` workspace booted one owned Ubuntu 24.04.5

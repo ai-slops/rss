@@ -1,6 +1,10 @@
 #![cfg(test)]
 
 mod common;
+#[path = "../../media/tests/native_evidence/mod.rs"]
+mod native_evidence;
+#[path = "../../media/tests/native_evidence/retain.rs"]
+mod native_retention;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -19,6 +23,10 @@ async fn black_silent_reconnect_records_exact_generations_without_consumer_metad
     // Given
     gst::init().expect("GStreamer");
     let harness = Harness::new();
+    let _evidence = native_retention::RetainOnDrop::new(
+        harness._directory.path(),
+        "metadata-free-source-capture",
+    );
     let cookie = harness.login().await;
     let initial = harness.snapshot(&cookie).await;
     let port = free_udp_port();

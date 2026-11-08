@@ -1,3 +1,7 @@
+mod native_evidence;
+#[path = "native_evidence/retain.rs"]
+mod native_retention;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     time::Duration,
@@ -60,6 +64,7 @@ fn causal_source_capture_records_both_reconnect_generations_without_consumer_met
     let manager = OutputManager::new();
     let output_id = ManagedOutputId::new("causal-source-capture")?;
     let directory = tempfile::tempdir()?;
+    let _evidence = native_retention::RetainOnDrop::new(directory.path(), "causal-source-capture");
     manager.register(OutputDefinition::Recording(
         RecordingDefinition::new(
             output_id.clone(),

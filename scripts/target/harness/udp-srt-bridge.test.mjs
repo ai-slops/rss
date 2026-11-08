@@ -3,6 +3,21 @@ import dgram from "node:dgram"
 import test from "node:test"
 import { UdpSrtBridge } from "./udp-srt-bridge.mjs"
 
+test("an unused authorized process-resume handover can be revoked without opening another peer", async (context) => {
+  const server = await socket()
+  context.after(() => close(server))
+  const bridge = new UdpSrtBridge({ serverPort: server.address().port })
+  await bridge.start()
+  context.after(() => bridge.close())
+  const authorized = bridge.authorizeHandover()
+  bridge.cancelHandover()
+  assert.equal(await authorized, null)
+  const next = bridge.authorizeHandover()
+  bridge.cancelHandover()
+  assert.equal(await next, null)
+  assert.equal(bridge.stats().handovers, 0)
+})
+
 test("requires an explicit control-packet handover and preserves old control routing", async (context) => {
   const server = await socket(); const first = await socket(); const second = await socket(); const unknown = await socket()
   for (const value of [server, first, second, unknown]) context.after(() => close(value))

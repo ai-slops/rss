@@ -34,7 +34,7 @@ impl Drop for PipelineGuard {
 
 pub fn sender(port: u16, timestamp_ppm: i64, wall_rate_ppm: i64) -> anyhow::Result<PipelineGuard> {
     let description = format!(
-        "mpegtsmux name=mux ! srtsink uri=\"srt://127.0.0.1:{port}?mode=caller&passphrase={PASSPHRASE}&pbkeylen=16\" wait-for-connection=false auto-reconnect=false sync=false \
+        "mpegtsmux name=mux alignment=7 ! srtsink uri=\"srt://127.0.0.1:{port}?mode=caller&passphrase={PASSPHRASE}&pbkeylen=16\" wait-for-connection=false auto-reconnect=false sync=false \
          videotestsrc is-live=true pattern=ball ! video/x-raw,width=640,height=360,framerate=30/1 ! x264enc tune=zerolatency key-int-max=30 ! h264parse config-interval=-1 ! identity name=video_rate ! mux. \
          audiotestsrc is-live=true wave=ticks ! audio/x-raw,rate=48000,channels=2 ! voaacenc ! aacparse ! identity name=audio_rate ! mux."
     );

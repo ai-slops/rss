@@ -26,6 +26,7 @@ export class UdpSrtBridge {
 
   pauseData() { this.#paused = true }
   resumeData() { this.#paused = false }
+  cancelHandover() { this.#handover?.resolve(null) }
 
   authorizeHandover(timeoutMs = 15_000) {
     if (this.#handover !== null || this.#previous !== null) throw new Error("SRT bridge already has a handover in progress")

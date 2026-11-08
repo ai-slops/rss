@@ -1,5 +1,7 @@
 use std::time::{Duration, Instant};
 
+mod native_evidence;
+
 use live_production_media::{
     engine::{EngineConfig, MediaEngine},
     output::{
@@ -16,8 +18,23 @@ use live_production_media::{
 #[test]
 fn dynamic_take_records_real_program_without_restarting_consumer() -> anyhow::Result<()> {
     // Given
+    let caps_diagnostic =
+        std::env::var("LIVE_PRODUCTION_FIXED_CAPS_DIAGNOSTIC").unwrap_or_default();
+    let pipeline = match caps_diagnostic.as_str() {
+        "1" => program_pipeline().replace(
+            "video/x-raw,format=I420,width=960,height=540,framerate=30/1",
+            "video/x-raw,format=I420,colorimetry=bt601,chroma-site=jpeg,width=960,height=540,framerate=30/1",
+        ),
+        "legacy" => program_pipeline().replace(
+            "video/x-raw,format=I420,width=960,height=540,framerate=30/1",
+            "video/x-raw,width=960,height=540,framerate=30/1",
+        ),
+        "" | "0" | "format" => program_pipeline().to_owned(),
+        _ => anyhow::bail!("unknown caps diagnostic profile"),
+    };
+    eprintln!("caps_diagnostic_profile={caps_diagnostic}");
     let engine = MediaEngine::spawn(EngineConfig::new(
-        program_pipeline(),
+        &pipeline,
         std::iter::empty::<(OutputId, &str)>(),
     ))?;
     let video_track = TrackId::new("camera-a-video")?;
@@ -72,6 +89,7 @@ fn dynamic_take_records_real_program_without_restarting_consumer() -> anyhow::Re
 
     // Then
     let segments = manager.recordings(&output_id)?;
+    native_evidence::preserve(directory.path(), "runtime-recording")?;
     assert!(
         segments.len() >= 2,
         "expected bounded Program segments: {segments:?}"
@@ -142,8 +160,8 @@ fn placement(
 }
 
 const fn program_pipeline() -> &'static str {
-    "compositor name=preview_compositor background=black force-live=true ignore-inactive-pads=true ! video/x-raw,width=960,height=540,framerate=30/1 ! fakesink sync=false \
-     compositor name=program_compositor background=black force-live=true ignore-inactive-pads=true ! video/x-raw,width=960,height=540,framerate=30/1 ! tee name=program_video \
+    "compositor name=preview_compositor background=black force-live=true ignore-inactive-pads=true ! video/x-raw,format=I420,width=960,height=540,framerate=30/1 ! fakesink sync=false \
+     compositor name=program_compositor background=black force-live=true ignore-inactive-pads=true ! video/x-raw,format=I420,width=960,height=540,framerate=30/1 ! tee name=program_video \
      program_video. ! queue max-size-buffers=2 leaky=downstream ! intervideosink name=program_video_tap channel=live-program-video-v1 sync=false async=false \
      program_video. ! queue max-size-buffers=2 leaky=downstream ! fakesink sync=false \
      audiomixer name=program_mixer force-live=true ! audio/x-raw,format=S16LE,rate=48000,channels=2 ! tee name=program_audio \

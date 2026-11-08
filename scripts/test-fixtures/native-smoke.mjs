@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { copyFile, open, unlink } from 'node:fs/promises';
+import { copyFile, open, readFile, unlink } from 'node:fs/promises';
 import net from 'node:net';
 
 if (process.env.LIVE_PRODUCTION_OWNER_PID === undefined) throw new Error('Native lifecycle fixtures require an owning supervisor');
@@ -22,9 +22,14 @@ const app = spawn(executable, [], {
   env: { ...process.env, LIVE_PRODUCTION_BIND: `127.0.0.1:${port}`, LIVE_PRODUCTION_STATE_DIR: state,
     LIVE_PRODUCTION_PASSWORD: 'lifecycle-fixture-password', LIVE_PRODUCTION_SECURE_COOKIE: 'false' },
 });
+let appStartTicks = null;
 await log.close();
 app.once('error', error => { throw error; });
-app.once('exit', code => process.exit(code ?? 1));
+app.once('close', code => {
+  const exit = () => process.exit(code ?? 1);
+  if (mode !== 'owner-loss' || appStartTicks === null) return exit();
+  process.stdout.write(`${JSON.stringify({ ownerLoss: 'reaped', appPid: app.pid, appStartTicks })}\n`, exit);
+});
 const deadline = Date.now() + 10000;
 for (;;) {
   try {
@@ -37,7 +42,13 @@ for (;;) {
   await new Promise(resolve => setTimeout(resolve, 25));
 }
 if (mode === 'deleted') await unlink(executable);
+appStartTicks = await startTicks(app.pid);
 console.info(JSON.stringify({ appPid: app.pid, deletedExecutable: mode === 'deleted' }));
 if (mode === 'success' || mode === 'deleted') process.exit(0);
 if (mode === 'failure') process.exit(37);
 setInterval(() => {}, 1000);
+
+async function startTicks(pid) {
+  const stat = await readFile(`/proc/${pid}/stat`, 'utf8');
+  return stat.slice(stat.lastIndexOf(') ') + 2).trim().split(/\s+/)[19];
+}

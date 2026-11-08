@@ -9,15 +9,18 @@ const baseUrl = process.env.LIVE_PRODUCTION_URL ?? "http://127.0.0.1:3001"
 const password = process.env.LIVE_PRODUCTION_PASSWORD ?? "test-operator-password"
 const evidenceDirectory = new URL(`${process.env.BROWSER_EVIDENCE_DIR ?? "../.tools/browser-evidence"}/`, import.meta.url)
 const browserRoot = new URL("../.tools/browser-root/", import.meta.url).pathname
+const nativeBrowser = process.env.LIVE_PRODUCTION_NATIVE === "1"
 await mkdir(evidenceDirectory, { recursive: true })
 
 const browser = await chromium.launch({
-  executablePath: new URL("./browser-chromium.sh", import.meta.url).pathname,
+  executablePath: nativeBrowser ? chromium.executablePath() : new URL("./browser-chromium.sh", import.meta.url).pathname,
   env: {
     ...process.env,
-    LD_LIBRARY_PATH: `${browserRoot}usr/lib/pulseaudio:${browserRoot}usr/lib:${browserRoot}lib`,
-    FONTCONFIG_PATH: `${browserRoot}etc/fonts`,
-    XDG_DATA_DIRS: `${browserRoot}usr/share`,
+    ...(nativeBrowser ? {} : {
+      LD_LIBRARY_PATH: `${browserRoot}usr/lib/pulseaudio:${browserRoot}usr/lib:${browserRoot}lib`,
+      FONTCONFIG_PATH: `${browserRoot}etc/fonts`,
+      XDG_DATA_DIRS: `${browserRoot}usr/share`,
+    }),
   },
   headless: true,
   args: ["--no-sandbox", "--disable-dev-shm-usage"],

@@ -3,6 +3,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
+use crate::source_stamp::SourceStamp;
 use gst::prelude::*;
 use gstreamer as gst;
 use serde::{Deserialize, Serialize};
@@ -82,6 +83,23 @@ impl ProvenanceCollector {
             intervals: state.intervals.clone(),
             gaps: state.gaps.clone(),
         })
+    }
+
+    pub fn record(&self, stamp: &SourceStamp, local_start_ns: u64) {
+        append_interval(
+            self,
+            RecordingProvenanceInterval {
+                engine_run_id: stamp.engine_run_id.clone(),
+                source_id: stamp.source_id.clone(),
+                track_id: stamp.track_id.clone(),
+                track_kind: stamp.track_kind,
+                continuity_generation: stamp.continuity_generation,
+                local_start_ns,
+                local_end_ns: local_start_ns.saturating_add(stamp.duration_ns),
+                media_start_ns: stamp.media_pts_ns,
+                media_end_ns: stamp.media_pts_ns.saturating_add(stamp.duration_ns),
+            },
+        );
     }
 }
 

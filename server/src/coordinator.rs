@@ -33,6 +33,10 @@ enum Request {
     SourcePublishingEndpoint(String, oneshot::Sender<Result<Value>>),
     ProvisionDestination(String, String, oneshot::Sender<Result<()>>),
     Shutdown(oneshot::Sender<Result<()>>),
+    Recovery(
+        Box<crate::coordinator_recovery::RecoveryCommand>,
+        oneshot::Sender<Result<Value>>,
+    ),
 }
 
 pub(crate) struct Owner {
@@ -48,6 +52,7 @@ pub(crate) struct Owner {
     pub(crate) state_directory: PathBuf,
     pub(crate) events: broadcast::Sender<()>,
     pub(crate) plugins: PluginRegistry,
+    pub(crate) recovery: crate::source_recovery::SourceRecoveryManager,
 }
 
 pub(crate) struct Applied {
@@ -97,6 +102,9 @@ impl Coordinator {
                             let result = owner.shutdown_outputs();
                             let _ = reply.send(result);
                             break;
+                        }
+                        Request::Recovery(command, reply) => {
+                            let _ = reply.send(owner.recovery(*command));
                         }
                     }
                 }
@@ -167,6 +175,20 @@ impl Coordinator {
         let (reply, response) = oneshot::channel();
         self.sender
             .send(Request::Shutdown(reply))
+            .await
+            .map_err(|_| AppError::Unavailable("Command coordinator stopped.".into()))?;
+        response
+            .await
+            .map_err(|_| AppError::Unavailable("Command coordinator stopped.".into()))?
+    }
+
+    pub(crate) async fn recovery(
+        &self,
+        command: crate::coordinator_recovery::RecoveryCommand,
+    ) -> Result<Value> {
+        let (reply, response) = oneshot::channel();
+        self.sender
+            .send(Request::Recovery(Box::new(command), reply))
             .await
             .map_err(|_| AppError::Unavailable("Command coordinator stopped.".into()))?;
         response

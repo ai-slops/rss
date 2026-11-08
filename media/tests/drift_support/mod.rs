@@ -17,6 +17,7 @@ use live_production_media::{
 };
 
 mod decode;
+mod eos;
 mod sender;
 pub use decode::decode_recordings;
 pub use sender::{free_udp_port, rss_kib, sender};
@@ -30,7 +31,7 @@ pub struct Fixture {
     pub outputs: OutputManager,
     pub output_id: ManagedOutputId,
     pub audio_route_sequence: u64,
-    _directory: tempfile::TempDir,
+    directory: tempfile::TempDir,
 }
 
 #[derive(Debug)]
@@ -72,7 +73,7 @@ impl Fixture {
             outputs,
             output_id,
             audio_route_sequence,
-            _directory: directory,
+            directory,
         })
     }
 
@@ -126,9 +127,23 @@ impl Fixture {
     }
 
     pub fn finish(&self) -> anyhow::Result<Vec<RecordingSegment>> {
-        self.outputs.stop(&self.output_id)?;
+        if std::env::var_os("LIVE_PRODUCTION_EOS_OBSERVE").is_some() {
+            eos::observe_stop(&self.outputs, &self.output_id)?;
+        } else {
+            self.outputs.stop(&self.output_id)?;
+        }
         wait_for_stopped(&self.outputs, &self.output_id)?;
+        if std::env::var_os("LIVE_PRODUCTION_EOS_OBSERVE").is_some() {
+            eprintln!(
+                "drift_stopped_state_observed snapshot={:?}",
+                self.outputs.snapshot(&self.output_id)
+            );
+        }
         self.outputs.recordings(&self.output_id).map_err(Into::into)
+    }
+
+    pub fn recording_directory(&self) -> &std::path::Path {
+        self.directory.path()
     }
 }
 
@@ -236,8 +251,8 @@ fn wait_for_stopped(manager: &OutputManager, id: &ManagedOutputId) -> anyhow::Re
 }
 
 const fn program_pipeline() -> &'static str {
-    "compositor name=preview_compositor background=black force-live=true ignore-inactive-pads=true ! video/x-raw,width=960,height=540,framerate=30/1 ! fakesink sync=false \
-     compositor name=program_compositor background=black force-live=true ignore-inactive-pads=true ! video/x-raw,width=960,height=540,framerate=30/1 ! tee name=program_video \
+    "compositor name=preview_compositor background=black force-live=true ignore-inactive-pads=true ! video/x-raw,format=I420,width=960,height=540,framerate=30/1 ! fakesink sync=false \
+     compositor name=program_compositor background=black force-live=true ignore-inactive-pads=true ! video/x-raw,format=I420,width=960,height=540,framerate=30/1 ! tee name=program_video \
      program_video. ! queue max-size-buffers=2 leaky=downstream ! intervideosink name=program_video_tap channel=live-{engine_run_id}-program-video-v1 sync=false async=false \
      program_video. ! queue max-size-buffers=2 leaky=downstream ! fakesink sync=false \
      audiomixer name=program_mixer force-live=true ! audio/x-raw,format=S16LE,rate=48000,channels=2 ! tee name=program_audio \

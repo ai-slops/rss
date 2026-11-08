@@ -12,6 +12,7 @@ use live_production::{
     routes::{self, AppState},
 };
 use live_production_media::preview::PreviewOutputs;
+use live_production_media::preview_network::PreviewNetworkConfig;
 use live_production_media::protocol::EngineRunId;
 mod supervision;
 
@@ -40,7 +41,9 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "true".into())
         .parse::<bool>()
         .context("LIVE_PRODUCTION_SECURE_COOKIE must be true or false")?;
-    let previews = PreviewOutputs::spawn(&engine_run_id).map_err(anyhow::Error::from)?;
+    let preview_network = PreviewNetworkConfig::from_environment().map_err(anyhow::Error::from)?;
+    let previews =
+        PreviewOutputs::spawn(&engine_run_id, &preview_network).map_err(anyhow::Error::from)?;
     let media_state = live_production::routes_media::MediaState::new(previews);
     let state = AppState::with_media(&password, secure_cookie, coordinator, media_state);
     let web_dist = env_path("LIVE_PRODUCTION_WEB_DIST", root.join("web/dist"));

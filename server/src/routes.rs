@@ -92,6 +92,7 @@ pub fn router(state: AppState, web_dist: PathBuf) -> Router {
             get(source_publishing_endpoint),
         )
         .route("/events", get(events))
+        .merge(crate::routes_recovery::router())
         .merge(crate::routes_media::router())
         .layer(RequestBodyLimitLayer::new(6_000_000));
     Router::new()

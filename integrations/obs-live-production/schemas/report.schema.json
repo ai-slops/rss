@@ -1,0 +1,67 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Live Production OBS Fixture Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "moduleLoaded", "module", "obsVersion", "state", "senders", "negativeCases"],
+  "allOf": [
+    {
+      "if": {"properties": {"state": {"const": "ready"}}, "required": ["state"]},
+      "then": {
+        "properties": {
+          "senders": {"minItems": 1},
+          "negativeCases": {"minItems": 2, "maxItems": 2}
+        }
+      }
+    }
+  ],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "moduleLoaded": {"const": true},
+    "module": {"const": "obs-live-production"},
+    "obsVersion": {"type": "string", "minLength": 1},
+    "state": {"enum": ["ready", "failed", "deadlineExceeded"]},
+    "senders": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sourceId", "sourceName", "audioMixIndex", "state", "error", "visual", "audio"],
+        "properties": {
+          "sourceId": {"type": "string", "minLength": 1},
+          "sourceName": {"type": "string", "minLength": 1},
+          "audioMixIndex": {"type": "integer", "minimum": 0, "maximum": 5},
+          "state": {"type": "string", "minLength": 1},
+          "error": {"type": "string"},
+          "visual": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["color", "frameCounter"],
+            "properties": {
+              "color": {"enum": ["red", "blue"]},
+              "frameCounter": {"const": true}
+            }
+          },
+          "audio": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["toneHz"],
+            "properties": {"toneHz": {"type": "integer", "minimum": 1}}
+          }
+        }
+      }
+    },
+    "negativeCases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "result"],
+        "properties": {
+          "kind": {"enum": ["badAuth", "duplicateSender"]},
+          "result": {"enum": ["pending", "rejected", "accepted", "notObserved", "fixtureError"]}
+        }
+      }
+    }
+  }
+}

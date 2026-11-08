@@ -16,6 +16,7 @@ use crate::protocol::{
     ContinuityGeneration, EngineRunId, FrameCount, GapTimebase, Nanoseconds, SourceGap, SourceKind,
     SourceSnapshot, SourceSpec,
 };
+use crate::source_capture::{CaptureProbe, SourceCaptureRegistry};
 
 pub struct SourceRuntime {
     pub spec: SourceSpec,
@@ -37,18 +38,34 @@ pub struct SourceRuntime {
     pub audio_mix: Option<AudioMixRuntime>,
     pub(crate) admission: Option<Arc<SourceAdmission>>,
     pub(crate) epochs: SourceEpochPair,
+    captures: (CaptureProbe, CaptureProbe),
     pub(crate) srt_listener_name: Option<String>,
     was_connected: bool,
 }
 
+pub struct SourceBuildContext<'a> {
+    pub pipeline: &'a gst::Pipeline,
+    pub engine_run_id: &'a EngineRunId,
+    pub source_captures: &'a SourceCaptureRegistry,
+}
+
+pub struct SourceBuild {
+    pub spec: SourceSpec,
+    pub generation: u64,
+    pub gaps: Vec<SourceGap>,
+}
+
+impl SourceBuild {
+    fn into_parts(self) -> (SourceSpec, u64, Vec<SourceGap>) {
+        (self.spec, self.generation, self.gaps)
+    }
+}
+
 impl SourceRuntime {
-    pub fn build(
-        pipeline: &gst::Pipeline,
-        engine_run_id: &EngineRunId,
-        spec: SourceSpec,
-        generation: u64,
-        gaps: Vec<SourceGap>,
-    ) -> Result<Self, String> {
+    pub fn build(context: &SourceBuildContext<'_>, build: SourceBuild) -> Result<Self, String> {
+        let (spec, generation, gaps) = build.into_parts();
+        let pipeline = context.pipeline;
+        let engine_run_id = context.engine_run_id;
         validate_source(&spec)?;
         let stem = element_stem(spec.id.as_str());
         let names = SourceNames::new(&stem);
@@ -91,6 +108,27 @@ impl SourceRuntime {
             spec: &spec,
             generation,
         })?;
+        let clean = crate::tap::TapChannels::clean(
+            engine_run_id,
+            &spec.video_track_id,
+            &spec.audio_track_id,
+        );
+        let video_capture_pad = bin
+            .by_name(&names.video_ingest)
+            .and_then(|element| element.static_pad("src"))
+            .ok_or_else(|| "source video has no capture pad".to_owned())?;
+        let audio_capture_pad = bin
+            .by_name(&names.audio_ingest)
+            .and_then(|element| element.static_pad("src"))
+            .ok_or_else(|| "source audio has no capture pad".to_owned())?;
+        let captures = (
+            context
+                .source_captures
+                .install(&clean.video, &video_capture_pad)?,
+            context
+                .source_captures
+                .install(&clean.audio, &audio_capture_pad)?,
+        );
         add_timing_probe(&bin, &names.video_timing, Arc::clone(&video_timing_control))?;
         add_timing_probe(&bin, &names.audio_timing, Arc::clone(&audio_timing_control))?;
         pipeline
@@ -121,6 +159,7 @@ impl SourceRuntime {
             audio_mix,
             admission,
             epochs,
+            captures,
             srt_listener_name,
             was_connected: false,
         })
@@ -141,6 +180,8 @@ impl SourceRuntime {
             admission.disconnect();
         }
         self.epochs.disconnect();
+        self.captures.0.disconnect();
+        self.captures.1.disconnect();
         if let Some(audio_mix) = self.audio_mix {
             audio_mix.detach(pipeline)?;
         }

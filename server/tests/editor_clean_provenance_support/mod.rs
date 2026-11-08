@@ -46,8 +46,14 @@ pub fn assert_provenance(package: &Value, source: &Value, video: &Value, audio: 
         .collect::<BTreeSet<_>>();
     assert_eq!(generations, BTreeSet::from([1, 2]));
     assert!(intervals.iter().all(|v| v["source_id"] == *source));
-    assert!(intervals.iter().any(|v| v["track_id"] == *video));
-    assert!(intervals.iter().any(|v| v["track_id"] == *audio));
+    for track in [video, audio] {
+        let track_generations = intervals
+            .iter()
+            .filter(|value| value["track_id"] == *track)
+            .filter_map(|value| value["continuity_generation"].as_u64())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(track_generations, BTreeSet::from([1, 2]));
+    }
     assert!(intervals.iter().all(
         |v| decimal(&v["media_start_ns"]).is_some_and(|s| s >= file_start)
             && decimal(&v["media_end_ns"]).is_some_and(|e| e <= file_end)
@@ -87,15 +93,42 @@ fn decimal(value: &Value) -> Option<u64> {
 }
 
 pub fn active_session_metadata(state: &std::path::Path, output_id: &str) -> Value {
+    let session = active_session_path(state, output_id);
+    serde_json::from_slice(&std::fs::read(session.join("session.json")).expect("session metadata"))
+        .expect("session JSON")
+}
+pub fn active_session_path(state: &std::path::Path, output_id: &str) -> std::path::PathBuf {
     let root = state.join("recordings").join(output_id);
-    let session = std::fs::read_dir(root)
+    std::fs::read_dir(root)
         .expect("recording directory")
         .filter_map(Result::ok)
         .map(|entry| entry.path())
         .find(|path| path.join("session.json").is_file())
-        .expect("active session");
-    serde_json::from_slice(&std::fs::read(session.join("session.json")).expect("session metadata"))
-        .expect("session JSON")
+        .expect("active session")
+}
+pub fn preserve_native_session(session: &std::path::Path) {
+    let Some(directory) = std::env::var_os("LIVE_PRODUCTION_PROVENANCE_EVIDENCE_DIR") else {
+        return;
+    };
+    let directory = std::path::PathBuf::from(directory);
+    std::fs::create_dir_all(&directory).expect("evidence directory");
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700))
+            .expect("private evidence directory");
+    }
+    for entry in std::fs::read_dir(session).expect("session files") {
+        let entry = entry.expect("session entry");
+        let path = entry.path();
+        if entry.file_type().expect("session file type").is_file()
+            && (entry.file_name() == "session.json"
+                || path.extension().is_some_and(|value| value == "mkv"))
+        {
+            std::fs::copy(&path, directory.join(entry.file_name()))
+                .expect("preserve native evidence");
+        }
+    }
 }
 pub async fn wait_connected(harness: &Harness, cookie: &str) {
     for _ in 0..100 {
@@ -125,5 +158,5 @@ pub fn free_udp_port() -> u16 {
         .port()
 }
 pub fn srt_sender(port: u16, passphrase: &str) -> gst::Pipeline {
-    gst::parse::launch(&format!("mpegtsmux name=mux ! srtsink uri=\"srt://127.0.0.1:{port}?mode=caller&passphrase={passphrase}&pbkeylen=16\" wait-for-connection=true videotestsrc is-live=true pattern=ball ! video/x-raw,width=640,height=360,framerate=30/1 ! videoconvert ! x264enc tune=zerolatency key-int-max=30 bitrate=1000 ! h264parse config-interval=-1 ! mux. audiotestsrc is-live=true wave=ticks ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=128000 ! aacparse ! mux.")).expect("sender").downcast::<gst::Pipeline>().expect("pipeline")
+    gst::parse::launch(&format!("mpegtsmux name=mux alignment=7 ! srtsink uri=\"srt://127.0.0.1:{port}?mode=caller&passphrase={passphrase}&pbkeylen=16\" wait-for-connection=true videotestsrc is-live=true pattern=ball ! video/x-raw,width=640,height=360,framerate=30/1 ! videoconvert ! x264enc tune=zerolatency key-int-max=30 bitrate=1000 ! h264parse config-interval=-1 ! mux. audiotestsrc is-live=true wave=ticks ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=128000 ! aacparse ! mux.")).expect("sender").downcast::<gst::Pipeline>().expect("pipeline")
 }

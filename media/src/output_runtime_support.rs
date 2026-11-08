@@ -3,11 +3,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::{
-    output::{OutputDefinition, RecordingSegment},
-    output_owner::SharedOutput,
-    output_publisher::Publisher,
-};
+use crate::{output::RecordingSegment, output_owner::SharedOutput, output_publisher::Publisher};
 use gstreamer::{self as gst, prelude::*};
 
 pub fn progress_units(
@@ -41,20 +37,6 @@ pub fn replace_recordings(
             .recordings
             .retain(|recording| recording.session_id != session_id);
         state.recordings.extend(recordings);
-    }
-}
-
-pub fn clock_engine_run_id(definition: &OutputDefinition) -> Option<String> {
-    match definition {
-        OutputDefinition::Recording(recording) => recording.engine_run_id.clone(),
-        OutputDefinition::Rtmps { .. } => None,
-    }
-}
-
-pub const fn capture_source_provenance(definition: &OutputDefinition) -> bool {
-    match definition {
-        OutputDefinition::Recording(recording) => recording.capture_source_provenance,
-        OutputDefinition::Rtmps { .. } => false,
     }
 }
 

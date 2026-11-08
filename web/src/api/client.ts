@@ -8,6 +8,13 @@ import {
   type Snapshot,
   snapshotSchema,
 } from "./schema"
+import {
+  type SourceRecoveryPolicyUpdate,
+  type SourceRecoveryStatus,
+  sourceRecoveryPolicyUpdateSchema,
+  sourceRecoveryRetrySchema,
+  sourceRecoveryStatusSchema,
+} from "./sourceRecovery"
 
 export class ApiError extends Error {
   readonly name = "ApiError"
@@ -78,6 +85,41 @@ export async function sendCommand(command: Command): Promise<CommandResponse> {
 export async function getSourcePublishingEndpoint(sourceId: string): Promise<PublishingEndpoint> {
   try {
     return publishingEndpointSchema.parse(await api.get(`sources/${encodeURIComponent(sourceId)}/publishing-endpoint`).json())
+  } catch (error) {
+    return translateError(error)
+  }
+}
+
+export async function getSourceRecovery(sourceId: string, signal?: AbortSignal): Promise<SourceRecoveryStatus> {
+  try {
+    const options = signal === undefined ? {} : { signal }
+    return sourceRecoveryStatusSchema.parse(await api.get(`sources/${encodeURIComponent(sourceId)}/recovery`, options).json())
+  } catch (error) {
+    return translateError(error)
+  }
+}
+
+export async function updateSourceRecovery(sourceId: string, update: SourceRecoveryPolicyUpdate): Promise<SourceRecoveryStatus> {
+  try {
+    const body = sourceRecoveryPolicyUpdateSchema.parse(update)
+    return sourceRecoveryStatusSchema.parse(await api.put(`sources/${encodeURIComponent(sourceId)}/recovery`, { json: body }).json())
+  } catch (error) {
+    return translateError(error)
+  }
+}
+
+export async function retrySourceRecovery(sourceId: string, requestId: string): Promise<SourceRecoveryStatus> {
+  try {
+    const body = sourceRecoveryRetrySchema.parse({ requestId })
+    return sourceRecoveryStatusSchema.parse(await api.post(`sources/${encodeURIComponent(sourceId)}/recovery/retry`, { json: body }).json())
+  } catch (error) {
+    return translateError(error)
+  }
+}
+
+export async function revokeSourceRecoveryController(sourceId: string): Promise<SourceRecoveryStatus> {
+  try {
+    return sourceRecoveryStatusSchema.parse(await api.delete(`sources/${encodeURIComponent(sourceId)}/recovery/controller`).json())
   } catch (error) {
     return translateError(error)
   }

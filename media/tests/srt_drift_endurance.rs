@@ -1,4 +1,7 @@
 mod drift_support;
+mod native_evidence;
+#[path = "native_evidence/retain.rs"]
+mod native_retention;
 
 use std::time::{Duration, Instant};
 
@@ -9,6 +12,10 @@ use live_production_media::protocol::{SourceSnapshot, TrackDriftReport};
 fn sustained_independent_clocks_report_drift_and_preserve_bounded_progress() -> anyhow::Result<()> {
     // Given
     let fixture = Fixture::new()?;
+    let _evidence = native_retention::RetainOnDrop::new(
+        fixture.recording_directory(),
+        "srt-drift-finalized-or-failed",
+    );
     let started = Instant::now();
     let first_sender = sender(fixture.port, 1_500, 0)?;
     first_sender.start()?;
@@ -24,7 +31,27 @@ fn sustained_independent_clocks_report_drift_and_preserve_bounded_progress() -> 
     let final_snapshot = run_reconnect_phase(&fixture, &mut samples)?;
     reconnect.stop()?;
     let audio_route_sequence = fixture.audio_route_sequence;
+    println!(
+        "drift_before_finalize duration_s={} frames={} rss_growth_kib={} max_video_queue_ns={} max_audio_queue_ns={} first_source={:?} final_source={:?}",
+        started.elapsed().as_secs(),
+        samples.program_frame_growth,
+        samples.rss_growth_kib(),
+        samples.max_video_queue_ns,
+        samples.max_audio_queue_ns,
+        first_snapshot.source,
+        final_snapshot.source
+    );
     let segments = fixture.finish()?;
+    native_evidence::preserve(fixture.recording_directory(), "srt-drift")?;
+    println!(
+        "drift_before_decode duration_s={} frames={} rss_growth_kib={} max_video_queue_ns={} max_audio_queue_ns={} segments={}",
+        started.elapsed().as_secs(),
+        samples.program_frame_growth,
+        samples.rss_growth_kib(),
+        samples.max_video_queue_ns,
+        samples.max_audio_queue_ns,
+        segments.len()
+    );
     let media = decode_recordings(&segments)?;
 
     // Then

@@ -10,7 +10,7 @@ LiveTestReceiver::LiveTestReceiver() { srt_startup(); }
 
 LiveTestReceiver::~LiveTestReceiver() { stop(); srt_cleanup(); }
 
-bool LiveTestReceiver::start() {
+bool LiveTestReceiver::start(bool reject_first) {
   listener_ = srt_create_socket();
   if (listener_ == SRT_INVALID_SOCK) return false;
   const int yes = 1;
@@ -30,6 +30,13 @@ bool LiveTestReceiver::start() {
   if (srt_bind(listener_, reinterpret_cast<sockaddr *>(&address), sizeof(address)) ==
       SRT_ERROR)
     return false;
+  if (reject_first) {
+    srt_listen_callback(listener_, [](void *context, SRTSOCKET, int,
+                                      const sockaddr *, const char *) {
+      auto *receiver = static_cast<LiveTestReceiver *>(context);
+      return receiver->rejected_.fetch_add(1) == 0 ? -1 : 0;
+    }, this);
+  }
   int length = sizeof(address);
   if (srt_getsockname(listener_, reinterpret_cast<sockaddr *>(&address), &length) ==
           SRT_ERROR ||

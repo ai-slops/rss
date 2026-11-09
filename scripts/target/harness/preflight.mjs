@@ -42,7 +42,8 @@ export async function runPreflight({ pluginDirectory, reportPath, serverBinary, 
   checks.push(check("ffmpeg-aac-encoder", encoders.ok && /\baac\b/iu.test(encoders.output), "AAC encoder capability"))
   checks.push(check("ffmpeg-decoders", decoders.ok && /\bh264\b/iu.test(decoders.output) && /\baac\b/iu.test(decoders.output), "H.264/AAC decoders"))
 
-  const nativeFiles = [resolve(serverBinary), resolve(supervisorBinary)]
+  const nativeFiles = [resolve(serverBinary), resolve(supervisorBinary),
+    resolve(pluginDirectory, "bin/64bit/obs-live-production-srt")]
   for (const path of nativeFiles) checks.push(nativeBinaryCheck(path))
   const obsPath = executablePath(obsBinary)
   if (obsPath !== null) {
@@ -85,8 +86,20 @@ function version(executable, args) {
 function nativeBinaryCheck(path) {
   const file = command("file", [path])
   const ldd = command("ldd", [path])
-  const native = file.ok && ldd.ok && !/musl|alpine|\.tools\/sysroot/iu.test(`${file.output}\n${ldd.output}`)
-  return check(`native-${basename(path)}`, native, native ? "GNU/Linux dependencies resolved" : `${firstLine(file.output)}; ${firstLine(ldd.output)}`)
+  const dependencyError = nativeDependencyError(ldd.output)
+  const native = file.ok && ldd.ok && dependencyError === null
+    && !/musl|alpine|\.tools\/sysroot/iu.test(`${file.output}\n${ldd.output}`)
+  return check(`native-${basename(path)}`, native, native ? "GNU/Linux dependencies resolved"
+    : dependencyError ?? `${firstLine(file.output)}; ${firstLine(ldd.output)}`)
+}
+
+export function nativeDependencyError(output) {
+  if (/\bnot found\b/iu.test(output)) return "Native shared library dependency not found"
+  const srtLibraries = new Set([...output.matchAll(/^\s*(libsrt(?:-gnutls|-openssl)?\.so[.\d]*)\s+=>/gmu)]
+    .map(match => match[1]))
+  return srtLibraries.size > 1
+    ? "Conflicting SRT runtimes: build the plugin with the same SRT variant as FFmpeg"
+    : null
 }
 
 function executablePath(name) {

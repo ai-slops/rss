@@ -14,6 +14,9 @@ extern "C" {
 }
 
 #include <chrono>
+#include <set>
+#include <csignal>
+#include <cerrno>
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
@@ -68,6 +71,17 @@ bool wait_bytes(const LiveTestReceiver &receiver, uint64_t target,
   return false;
 }
 
+pid_t only_helper() {
+  std::set<pid_t> children;
+  for (const auto &task : std::filesystem::directory_iterator("/proc/self/task")) {
+    std::ifstream input(task.path() / "children");
+    pid_t child = 0;
+    while (input >> child) children.insert(child);
+  }
+  require(children.size() == 1, "one owned SRT helper is required");
+  return *children.begin();
+}
+
 bool wait_stops(const LiveTestOutput &output, int target,
                 std::chrono::milliseconds timeout) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -110,6 +124,12 @@ int main(int argc, char **argv) {
     require(obs_reset_video(&video) == OBS_VIDEO_SUCCESS, "video reset failed");
     obs_audio_info audio{48000, SPEAKERS_STEREO};
     require(obs_reset_audio(&audio), "audio reset failed");
+    // The synthetic receivers own their runtime before OBS loads its encoders;
+    // production receivers are external and the publisher uses its own helper.
+    LiveTestReceiver receiver_a;
+    LiveTestReceiver receiver_b;
+    LiveTestReceiver receiver_bad;
+    LiveTestReceiver receiver_publisher;
     load_module(sdk, "obs-x264");
     load_module(sdk, "obs-ffmpeg");
     live_production::register_fixture_source();
@@ -128,11 +148,7 @@ int main(int argc, char **argv) {
     std::string error;
     obs_source_t *source = live_production::create_fixture_source(command, config, error);
     require(source, "fixture source failed");
-    LiveTestReceiver receiver_a;
-    LiveTestReceiver receiver_b;
-    LiveTestReceiver receiver_bad;
-    LiveTestReceiver receiver_publisher;
-    require(receiver_a.start() && receiver_b.start() && receiver_bad.start() &&
+    require(receiver_a.start(true) && receiver_b.start() && receiver_bad.start() &&
                 receiver_publisher.start(),
             "receiver start failed");
     uint64_t frozen_bytes = 0;
@@ -150,6 +166,7 @@ int main(int argc, char **argv) {
       require(first.start() && second.start(), "output start failed");
       require(wait_bytes(receiver_a, 30000, 8s) && wait_bytes(receiver_b, 30000, 8s),
               "initial SRT media missing");
+      require(receiver_a.rejected() >= 2, "transient rejected handshake was not retried");
       freeze_epoch = first.freeze();
       require(freeze_epoch > 0, "freeze failed");
       std::this_thread::sleep_for(400ms);
@@ -209,6 +226,20 @@ int main(int argc, char **argv) {
       publisher.stop();
     }
     require(receiver_publisher.wait_completed(1, 2s), "Publisher SRT session did not drain");
+    config.target.port = receiver_bad.port();
+    pid_t killed_helper = 0;
+    {
+      live_production::Publisher publisher(config, "helper-fault", [] {});
+      require(publisher.initialize(error) && publisher.start(error), "fault Publisher start failed");
+      require(wait_bytes(receiver_bad, 10000, 8s), "fault Publisher media missing");
+      killed_helper = only_helper();
+      require(kill(killed_helper, SIGKILL) == 0, "cannot inject owned helper failure");
+      const auto deadline = std::chrono::steady_clock::now() + 2s;
+      while (publisher.state() != "failed" && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::sleep_for(20ms);
+      require(publisher.state() == "failed", "helper death did not fail the independent output");
+    }
+    require(kill(killed_helper, 0) == -1 && errno == ESRCH, "SRT helper was not reaped");
     receiver_a.stop();
     receiver_b.stop();
     receiver_bad.stop();

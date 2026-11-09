@@ -11,6 +11,10 @@ find_package(Qt6 REQUIRED COMPONENTS Network Widgets)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(LIVE_FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil)
 pkg_check_modules(LIVE_SRT REQUIRED IMPORTED_TARGET srt)
+add_executable(obs-live-production-srt src/live_srt_helper.cpp)
+target_compile_features(obs-live-production-srt PRIVATE cxx_std_17)
+target_compile_options(obs-live-production-srt PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_link_libraries(obs-live-production-srt PRIVATE PkgConfig::LIVE_SRT)
 
 add_library(obs-live-production MODULE
   src/config.cpp
@@ -56,9 +60,16 @@ target_link_libraries(obs-live-production PRIVATE
   Qt6::Network
   Threads::Threads
   PkgConfig::LIVE_FFMPEG
-  PkgConfig::LIVE_SRT
+  ${CMAKE_DL_LIBS}
 )
 set_target_properties(obs-live-production PROPERTIES PREFIX "")
+add_dependencies(obs-live-production obs-live-production-srt)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_custom_command(TARGET obs-live-production POST_BUILD
+    COMMAND "${CMAKE_COMMAND}" "-DPLUGIN_BINARY=$<TARGET_FILE:obs-live-production>"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CheckNativeDependencies.cmake"
+    VERBATIM)
+endif()
 
 if(BUILD_TESTING)
   add_executable(obs-live-production-live-queue-test
@@ -81,7 +92,8 @@ if(BUILD_TESTING)
   target_include_directories(obs-live-production-live-output-test PRIVATE
     src)
   target_link_libraries(obs-live-production-live-output-test PRIVATE
-    OBS::libobs Qt6::Network Threads::Threads PkgConfig::LIVE_FFMPEG PkgConfig::LIVE_SRT)
+    OBS::libobs Qt6::Network Threads::Threads PkgConfig::LIVE_FFMPEG ${CMAKE_DL_LIBS})
+  target_link_libraries(obs-live-production-live-output-test PRIVATE PkgConfig::LIVE_SRT)
   add_test(NAME obs-live-production-live-output-test COMMAND obs-live-production-live-output-test)
   set_tests_properties(obs-live-production-live-output-test PROPERTIES TIMEOUT 30)
   add_test(NAME obs-live-production-live-output-ntsc-test COMMAND obs-live-production-live-output-test --ntsc)
@@ -93,7 +105,7 @@ if(BUILD_TESTING)
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>)
   target_include_directories(obs-live-production-live-transport-test PRIVATE src)
   target_link_libraries(obs-live-production-live-transport-test PRIVATE
-    Qt6::Network Threads::Threads PkgConfig::LIVE_SRT)
+    Qt6::Network Threads::Threads ${CMAKE_DL_LIBS})
   add_test(NAME obs-live-production-live-transport-test COMMAND obs-live-production-live-transport-test)
   set_tests_properties(obs-live-production-live-transport-test PROPERTIES TIMEOUT 10)
   add_executable(obs-live-production-live-timestamp-test
@@ -104,7 +116,7 @@ if(BUILD_TESTING)
     $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>)
   target_include_directories(obs-live-production-live-timestamp-test PRIVATE src)
   target_link_libraries(obs-live-production-live-timestamp-test PRIVATE
-    OBS::libobs Qt6::Network Threads::Threads PkgConfig::LIVE_FFMPEG PkgConfig::LIVE_SRT)
+    OBS::libobs Qt6::Network Threads::Threads PkgConfig::LIVE_FFMPEG ${CMAKE_DL_LIBS})
   add_test(NAME obs-live-production-live-timestamp-test COMMAND obs-live-production-live-timestamp-test)
   add_executable(obs-live-production-fixture-audio-test
     tests/fixture_audio_test.cpp src/fixture_source.cpp)
@@ -274,8 +286,12 @@ if(BUILD_TESTING)
   add_test(NAME obs-live-production-module-runtime-test
     COMMAND obs-live-production-module-runtime-test
   )
+  add_dependencies(obs-live-production-live-output-test obs-live-production-srt)
+  add_dependencies(obs-live-production-live-transport-test obs-live-production-srt)
+  add_dependencies(obs-live-production-live-timestamp-test obs-live-production-srt)
 endif()
 
+install(TARGETS obs-live-production-srt RUNTIME DESTINATION "bin/64bit")
 install(TARGETS obs-live-production
   LIBRARY DESTINATION "bin/64bit"
 )

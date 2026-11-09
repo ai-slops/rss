@@ -15,6 +15,7 @@ sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
   build-essential pkg-config curl ca-certificates git xz-utils python3 file \
   libglib2.0-dev libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev \
   libgstreamer-plugins-bad1.0-dev libssl-dev qt6-base-dev \
+  libavformat-dev libavcodec-dev libavutil-dev libsrt-gnutls-dev libgnutls28-dev nettle-dev \
   gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
   gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav \
   gstreamer1.0-nice gstreamer1.0-x ffmpeg obs-studio libobs-dev cmake xvfb xauth mesa-utils

@@ -14,7 +14,8 @@ class LiveTestReceiver {
  public:
   LiveTestReceiver();
   ~LiveTestReceiver();
-  bool start();
+  bool start(bool reject_first = false);
+  uint32_t rejected() const { return rejected_.load(); }
   void stop();
   uint16_t port() const { return port_; }
   uint64_t bytes() const { return bytes_.load(); }
@@ -28,6 +29,7 @@ class LiveTestReceiver {
   std::atomic<SRTSOCKET> listener_{SRT_INVALID_SOCK};
   std::atomic<SRTSOCKET> peer_{SRT_INVALID_SOCK};
   uint16_t port_ = 0;
+  std::atomic<uint32_t> rejected_{0};
   std::atomic<bool> stopped_{false};
   std::atomic<uint64_t> bytes_{0};
   std::atomic<uint64_t> packets_{0};

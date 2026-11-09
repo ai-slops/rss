@@ -142,6 +142,12 @@ class LiveOutput {
   }
 
   void run(const std::shared_ptr<Session> &session) {
+    struct TransportGuard {
+      LiveSrtTransport &transport;
+      ~TransportGuard() { transport.finish(); }
+    } transport_guard{session->transport};
+    // PR_SET_PDEATHSIG follows the spawning thread: drain and reap the helper
+    // here, before that worker exits, rather than in the later Session teardown.
     LiveMuxer muxer(mux_settings_, video_, audio_, session->queue, session->transport);
     if (!session->transport.connect() || stopping_.load()) {
       if (!stopping_.load()) fail_from_worker(session);

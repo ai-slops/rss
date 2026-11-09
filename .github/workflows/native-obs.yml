@@ -1,0 +1,23 @@
+name: Native OBS validation
+
+# Run only when explicitly requested in Actions. No artifact upload or publish.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ubuntu-obs:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Install Rust
+        run: rustup toolchain install 1.91.1 --profile minimal --component rustfmt,clippy
+      - name: Install native dependencies
+        run: bash scripts/ubuntu-dependencies.sh
+      - name: Build and exercise real OBS publishing and recovery
+        run: bash scripts/ubuntu-obs-check.sh

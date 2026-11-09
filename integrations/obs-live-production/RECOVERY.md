@@ -112,8 +112,10 @@ acknowledging `executed`. Timeout reports `publisherTransportNotQuiescent`.
 Packets and resume operations are epoch-fenced; frozen admission is bounded and
 resume waits for an IDR. Qt/controller processing and other publishers remain
 live. A finite instance-fenced timer resumes within at most 30 seconds; manual
-Stop quiesces, interrupts and joins only its own writer. No child process,
-arbitrary thread, source mute or global packet interposition is involved.
+Stop quiesces and joins its writer, closes its private SRT helper socket, and
+reaps the helper. The writer waits for each helper send acknowledgement, so
+freeze also covers in-flight SRT sends. No source mute or global packet
+interposition is involved.
 
 This is independent of the harness's network bridge DATA pause. The verifier
 must observe stalled media, online controller, recreation/new generation and

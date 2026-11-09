@@ -1,10 +1,6 @@
 # Native preview and smoke ownership
 
-## Incident and repair
-
-The operator measured 18 obsolete native application processes adopted by PID 1, each with 35–56 threads, saturating the eight-CPU workspace. Tracking a `cargo run` launcher PID and killing only that PID did not establish ownership of its native child. A further eight obsolete, deleted application executables were found and explicitly stopped during recovery.
-
-The project now builds `live-production-supervisor`, a small Linux-only CLI. It:
+The project builds `live-production-supervisor`, a small Linux-only CLI. It:
 
 - starts each command in a private process group;
 - becomes a child subreaper so detached/double-fork descendants remain owned and can be reaped;
@@ -19,8 +15,6 @@ The native application additionally watches its owning supervisor's PID and proc
 
 Every `MediaEngine` now retains and joins its owner thread, for synthetic and SRT sources alike. This fixes a reproduced post-assertion native SRT teardown crash caused by process exit racing the media owner. Source handlers/probes are detached before the core pipeline enters NULL. The core graph does not wait for EOS; independent output owners are responsible for draining their muxers before coordinator shutdown.
 
-The operator-review fixes were validated in `var/internal-validation.TRI6kS`, a detached code checkout with independent binaries, bundle and state. The production supervisor/application identities `419348`/`419353` and application start ticks `36675901` remained unchanged, and its executable was not replaced or deleted. No automatic merge/deployment or service mutation was performed. Full internal evidence is in `docs/internal-gates-2026-10-27.md`.
-
 ## Regression
 
 ```sh
@@ -29,15 +23,7 @@ LIVE_PRODUCTION_LIFECYCLE_EXPECT_ZERO=1 ./scripts/lifecycle-acceptance.sh
 
 Run the zero-baseline form with preview stopped. Normal acceptance can also verify that an existing, separately supervised preview remains unchanged.
 
-Observed after cleanup on 2026-10-27:
-
-- Eleven actual native-app runs covered successful smoke completion, assertion failure, timeout, INT/TERM/HUP, repeated runs, unlinked/deleted executables and abrupt supervisor KILL.
-- Native process count was **0 before and 0 after**. Each individual run restored baseline, not only the final run.
-- Seven additional process-tree cases verified forced cleanup/reaping of an intentionally abandoned descendant, including a child that detached into another session.
-- Five native binary unit tests passed, including owner-generation and exclusive-state ownership checks.
-- Supervisor and production library/binary Clippy passed with warnings denied. Source-size and runner syntax checks passed.
-
-Evidence comes from actual `/proc` executable identities and process generations, including the ` (deleted)` suffix; process-name matching alone is insufficient. No command-line arguments or credentials are printed by the process inspection helper.
+The regression inspects actual `/proc` executable identities and process generations, including deleted executables.
 
 For explicitly authorized emergency cleanup of **all project native applications**, including a supervised preview:
 

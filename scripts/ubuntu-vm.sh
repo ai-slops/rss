@@ -2,18 +2,19 @@
 # One foreground-owned disposable VM. The caller supplies a bounded host workload.
 set -euo pipefail
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-BASE=/home/dim/.cache/dim/artifacts/6a81c37564db9b1ee84e141922625e1d7c5b389b99bb3c572e0243607d5bb4d2
-DIGEST=6a81c37564db9b1ee84e141922625e1d7c5b389b99bb3c572e0243607d5bb4d2
 STATE=${LIVE_UBUNTU_STATE:-"$ROOT/var/ubuntu-validation"}
 MODE=${1:-}
 RUN_ID=$(date -u +%Y%m%dT%H%M%SZ)
 case ${1:-} in
-  --help) printf '%s\n' 'Usage: bash scripts/ubuntu-vm.sh run|resume HOST-COMMAND [ARGS...]' 'Set LIVE_UBUNTU_STATE to the retained private state when resuming. No replacement disk or key is created.'; exit 0 ;;
+  --help) printf '%s\n' 'Usage: bash scripts/ubuntu-vm.sh run|resume HOST-COMMAND [ARGS...]' 'Set LIVE_UBUNTU_IMAGE and LIVE_UBUNTU_IMAGE_SHA256. Set LIVE_UBUNTU_STATE when resuming.'; exit 0 ;;
   run|resume) shift; [ "$#" -gt 0 ] || { printf '%s\n' 'A workload command is required.' >&2; exit 2; } ;;
-  *) printf '%s\n' 'Expected run or --help.' >&2; exit 2 ;;
+  *) printf '%s\n' 'Expected run, resume or --help.' >&2; exit 2 ;;
 esac
+BASE=${LIVE_UBUNTU_IMAGE:?Set LIVE_UBUNTU_IMAGE to an Ubuntu 24.04 cloud image}
+DIGEST=${LIVE_UBUNTU_IMAGE_SHA256:?Set LIVE_UBUNTU_IMAGE_SHA256 to its verified SHA-256}
 umask 077
 mkdir -p "$STATE"
+chmod 700 "$STATE"
 exec 9>"$STATE/owner.lock"
 flock -n 9 || { printf '%s\n' 'This VM already has an owner.' >&2; exit 1; }
 printf '%s  %s\n' "$DIGEST" "$BASE" | sha256sum -c -

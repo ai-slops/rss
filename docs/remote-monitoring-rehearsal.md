@@ -37,7 +37,7 @@ The inspected development backend is rswebrtc `0.14.3-RELEASE` with GStreamer `1
 `webrtcsink` exposes STUN, TURN arrays, relay policy, and the READY-state `consumer-added` signal.
 The underlying ICE agent exposes `min-rtp-port` and `max-rtp-port`; the server applies the declared
 range to every consumer before negotiation. Startup fails if the installed target backend cannot
-enforce those properties. The native Ubuntu agent must still report its actual plugin versions;
+enforce those properties. Report the actual plugin versions on the native Ubuntu host;
 the development versions do not prove Ubuntu package availability.
 
 ## Authenticated Capability Check
@@ -134,23 +134,3 @@ TURN endpoints, or project/source names.
 Real remote laptop behavior, Ubuntu hardware capacity, Wi-Fi/corporate firewall policy, and any
 host forwarding or TURN service remain unverified until the host owner and laptop operator perform
 this check on the actual route.
-
-## Local Driver Evidence
-
-The read-only driver was exercised against an isolated worktree server under the bounded native
-supervisor with one preconfigured synthetic source and no outputs. The current sanitized report is:
-
-```text
-var/monitor-local-20261028-private-peer-current/monitor-report.json
-```
-
-Observed locally: authenticated control, unchanged Program revision and route settings despite
-live meter movement, initially muted monitors, changing 960x540 Preview and Program frames, and
-three connected host-to-host UDP ICE peers. The report records two peers before Listen and a third
-post-Listen peer with `receiverKinds: ["audio"]`; `privatePeerMatched: true`, `matchedPeerIndex: 2`,
-and its packet count agree with peer 2's inbound audio entry. Candidate addresses, ports, SDP,
-credentials, cookies, source names, and signalling peer identifiers are absent from the report.
-
-This is loopback/container software evidence only. It does not verify the target laptop, shared
-HTTPS ingress media traversal, host UDP forwarding, TURN, native Ubuntu hardware, or remote network
-policy.

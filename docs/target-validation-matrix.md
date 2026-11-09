@@ -1,17 +1,8 @@
-# Target Validation Matrix
+# Native OBS validation
 
-## Scope
-
-This runbook drives the existing native Ubuntu validation agent. It does not provision a VM,
-install packages, implement the OBS plugin, or claim native success before a real OBS process
-loads the staged module and sends authenticated SRT media.
-
-Run from the coordinator-provided checkpoint of `work/target-rehearsal-20261028`; record the exact
-source SHA in the external validation ledger before building. Do not substitute the Alpine
-workspace binaries or `.tools/sysroot`.
-
-The rehearsal is local/private only. It never starts a public RTMPS destination. Software Xvfb
-counts as a software-display validation, not GPU or hardware-encoder evidence.
+Build and run the current source on native Ubuntu using `scripts/ubuntu-obs-check.sh`.
+For an isolated VM, run `bash scripts/ubuntu-verify.sh run`.
+Logs and private fixtures stay under `var/`; source documentation does not certify a build.
 
 ## Operator entrypoints
 
@@ -62,7 +53,8 @@ Required properties:
   Matroska, MPEG-TS, H.264/AAC parse/decode, webrtcsink and nicesrc.
 - FFmpeg exposes H.264/AAC encode and decode capabilities.
 
-The plugin stage is expected to contain native `.so` files under `bin/64bit` and optional data
+The plugin stage must contain `obs-live-production.so` and the executable
+`obs-live-production-srt` under `bin/64bit`, plus module data
 under `data/obs-plugins`. The rehearsal supplies those paths through OBS plugin environment
 variables; it does not copy into a user profile or system directory.
 
@@ -221,9 +213,3 @@ Expected private artifacts:
 - `private/obs-fixture.json`, `private/obs-fixture-control.json`, `private/obs-fixture-report.json`
 - isolated state/recordings and native process logs
 - `rehearsal-report.json` (sanitized summary)
-
-## Remaining native action
-
-The existing Ubuntu validation agent must build the server/supervisor and OBS plugin natively,
-stage the plugin, run preflight, then run the full rehearsal command above. Until that execution
-produces `status: pass`, report `partial_native_not_run`; local unit/dry checks are not OBS proof.

@@ -1,9 +1,6 @@
 # Source-scoped publisher recovery contract, version 1
 
-Implementation contract for the separate recovery phase after native fix
-`2a7fdf6b741057e46aae18804dc5801804da48fe`. Root alone owns final independent
-review/protected promotion. No deployment, VM replacement, SSH, arbitrary command,
-scene change, recorder start, OBS main-stream start, or public/platform output.
+Source-scoped recovery uses the versioned protocol below.
 
 ## Boundary and ownership
 

@@ -9,10 +9,20 @@ automated rehearsal fixture is restricted to loopback.
 ## Build and package
 
 Build on the Ubuntu OBS host with the OBS 30.0.2 development packages and the
-`obs-x264` and `obs-ffmpeg` encoder modules available. The module-owned in-process
+`obs-x264` and `obs-ffmpeg` encoder modules available. The module-owned
 MPEG-TS/SRT output also needs native FFmpeg format/codec/util and libsrt
 development packages discoverable through pkg-config. It does not require a
 custom RTMP service or a patched system OBS output backend.
+
+On Ubuntu 24.04 use `libavformat-dev libavcodec-dev libavutil-dev
+libsrt-gnutls-dev libgnutls28-dev nettle-dev`.
+
+The plugin owns a small `obs-live-production-srt` executable alongside its module.
+It isolates libsrt's process-global state from OBS's FFmpeg module and receives
+credentials and MPEG-TS only through a private socket. Each send is acknowledged
+after libsrt accepts it. Stop closes the socket, then terminates and reaps a
+blocked helper within a bounded grace period; parent death also stops it.
+Install both binaries together using the package below.
 
 ```sh
 cmake -S integrations/obs-live-production \
@@ -26,6 +36,22 @@ cmake --install integrations/obs-live-production/build \
 
 The install step directly stages the layout expected by the rehearsal:
 `bin/64bit` and `data/obs-plugins/obs-live-production`.
+
+For an ordinary Linux OBS installation, package that stage and extract it into
+the current user's OBS plugin directory while OBS is closed:
+
+```sh
+bash scripts/package-obs-plugin.sh integrations/obs-live-production/package \
+  /tmp/obs-live-production-linux.tar.gz
+mkdir -p "${XDG_CONFIG_HOME:-$HOME/.config}/obs-studio/plugins"
+tar -xzf /tmp/obs-live-production-linux.tar.gz \
+  -C "${XDG_CONFIG_HOME:-$HOME/.config}/obs-studio/plugins"
+```
+
+Start OBS and open **Tools → Live Production SRT Publisher**. Build against
+the OBS/libobs and Qt versions installed on the sender. Linux `.so` packages
+cannot be installed into Windows or macOS OBS, or into a Flatpak sandbox as
+ordinary native packages.
 
 CTest also includes a real libobs audio-root regression. It initializes a small
 software-rendered video context, emits 440/880 Hz on separate mixes and requires

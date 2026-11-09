@@ -21,3 +21,13 @@ jobs:
         run: bash scripts/ubuntu-dependencies.sh
       - name: Build and exercise real OBS publishing and recovery
         run: bash scripts/ubuntu-obs-check.sh
+  windows-build:
+    runs-on: windows-2022
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Build Windows plugin and test private recovery storage
+        shell: pwsh
+        run: ./scripts/windows-obs-build.ps1

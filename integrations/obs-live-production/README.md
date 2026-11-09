@@ -1,6 +1,6 @@
 # OBS Live Production Publisher
 
-This out-of-tree OBS Studio 30.0.2 plugin publishes a selected OBS source or
+This out-of-tree OBS Studio plugin publishes a selected OBS source or
 scene through an independent H.264/AAC MPEG-TS SRT output. Video uses a
 dedicated `obs_view`; audio uses one explicit OBS mix index from `0` through
 `5`. The reusable publisher core accepts ordinary remote SRT targets. Only the
@@ -19,8 +19,9 @@ libsrt-gnutls-dev libgnutls28-dev nettle-dev`.
 
 The plugin owns a small `obs-live-production-srt` executable alongside its module.
 It isolates libsrt's process-global state from OBS's FFmpeg module and receives
-credentials and MPEG-TS only through a private socket. Each send is acknowledged
-after libsrt accepts it. Stop closes the socket, then terminates and reaps a
+credentials and MPEG-TS only through private IPC. Linux uses a socket and Windows
+uses inherited pipes with length framing and a kill-on-close Job Object. Each send is acknowledged
+after libsrt accepts it. Stop closes IPC, then terminates and reaps a
 blocked helper within a bounded grace period; parent death also stops it.
 Install both binaries together using the package below.
 
@@ -53,6 +54,46 @@ the OBS/libobs and Qt versions installed on the sender. Linux `.so` packages
 cannot be installed into Windows or macOS OBS, or into a Flatpak sandbox as
 ordinary native packages.
 
+### Windows x64 / OBS 33
+
+The Windows package targets **OBS Studio 33.0.1 x64**, with its Qt 6.11 and FFmpeg
+62 runtime. Use the matching OBS version; the Linux archive and older OBS ABI
+packages are not interchangeable.
+
+Close OBS, run the Windows setup executable and restart ordinary installed OBS.
+The installer places the module, SRT helper and libsrt DLL under
+`%ProgramData%\obs-studio\plugins\obs-live-production\bin\64bit`, with resources
+under the sibling `data` directory. Remove it through Windows Installed Apps.
+Portable OBS deliberately searches its own plugin locations instead of the
+system plugin directory, so this system installer is for ordinary OBS mode.
+
+Open **Tools → Live Production SRT Publisher**, select the private JSON bundle,
+confirm the named source/scene and stereo mix, and click **Start publisher**.
+The source name in the bundle must match an existing OBS source or scene exactly.
+Audio must be 48 kHz stereo. Close does not stop the publisher; use **Stop publisher**.
+
+To build from source, install Visual Studio 2022 C++ Build Tools with the Windows
+SDK and CMake, then run on Windows x64:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/windows-obs-build.ps1
+```
+
+`-CMake` can select the full `cmake.exe` path. The script verifies fixed official
+OBS/dependency SHA-256 hashes, builds the OBS development libraries and plugin,
+runs Windows ACL/exclusive-owner/atomic-recovery-state tests, and writes the ZIP
+under `var/windows-build`. Build logs belong in the CI/job output.
+
+To create the setup executable from that Windows-built package on Linux:
+
+```sh
+bash scripts/package-obs-windows.sh /path/to/package/obs-live-production \
+  /tmp/obs-live-production-obs33-windows-x64-setup.exe
+```
+
+The packaging script builds a local NSIS container when needed. Installation
+packages contain no server operator password or scoped publishing credentials.
+
 CTest also includes a real libobs audio-root regression. It initializes a small
 software-rendered video context, emits 440/880 Hz on separate mixes and requires
 absolute RMS/tone amplitude with negligible cross-mix leakage. It uses `DISPLAY`
@@ -65,7 +106,9 @@ teardown; an auxiliary video view alone is not part of OBS's global audio mix.
 
 Each sender bundle follows `schemas/publisher-bundle.schema.json`. It contains
 the scoped SRT passphrase and stream ID and must be a regular file with mode
-`0600`. The plugin never includes the target host, port, URL, passphrase, or
+`0600` on Linux. On Windows, the file must have a private DACL granting access
+only to the current user, SYSTEM and Administrators, with no reparse point.
+Store downloaded bundles in your private user profile. The plugin never includes the target host, port, URL, passphrase, or
 stream ID in its report or explicit log messages.
 
 The bundle's `bufferMs` is applied directly to libsrt's millisecond latency

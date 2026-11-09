@@ -53,6 +53,9 @@ pub(crate) struct Owner {
     pub(crate) events: broadcast::Sender<()>,
     pub(crate) plugins: PluginRegistry,
     pub(crate) recovery: crate::source_recovery::SourceRecoveryManager,
+    pub(crate) automatic_recording_retry:
+        std::collections::HashMap<crate::model::Id, std::time::Instant>,
+    pub(crate) automatic_recording_connected: std::collections::HashSet<crate::model::Id>,
 }
 
 pub(crate) struct Applied {
@@ -78,10 +81,22 @@ impl Coordinator {
                     let _ = startup_sender.send(owner.map(|_| ()));
                     return;
                 };
+                let runtime = match tokio::runtime::Builder::new_current_thread().enable_time().build() {
+                    Ok(runtime) => runtime,
+                    Err(error) => { let _ = startup_sender.send(Err(AppError::Internal(error.into()))); return; }
+                };
+                owner.reconcile_automatic_recordings();
                 if startup_sender.send(Ok(())).is_err() {
                     return;
                 }
-                while let Some(request) = receiver.blocking_recv() {
+                runtime.block_on(async {
+                let mut tick = tokio::time::interval(std::time::Duration::from_millis(250));
+                tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+                loop {
+                    let request = tokio::select! {
+                        request = receiver.recv() => match request { Some(request) => request, None => break },
+                        _ = tick.tick() => { owner.reconcile_automatic_recordings(); continue; }
+                    };
                     match request {
                         Request::Snapshot(reply) => {
                             let _ = reply.send(owner.snapshot());
@@ -108,6 +123,7 @@ impl Coordinator {
                         }
                     }
                 }
+                });
             })
             .map_err(|error| AppError::Internal(error.into()))?;
         startup_receiver

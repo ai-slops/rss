@@ -91,7 +91,9 @@ impl Owner {
                     .collect(),
             })?;
         self.project.sources.push(source);
+        self.ensure_automatic_recorders();
         self.bump_project()?;
+        self.reconcile_automatic_recordings();
         Ok(Applied {
             revision: Some(self.project.revision.clone()),
             at_ns: media.at_ns.value().to_string(),
@@ -119,7 +121,7 @@ impl Owner {
                 .iter()
                 .any(|route| route.track_id == track.id && route.routed)
         });
-        let active_recording = self.project.outputs.iter().any(|output| matches!(&output.adapter, OutputAdapter::SourceRecording { source_id, .. } if source_id == &source.id)
+        let active_recording = self.project.outputs.iter().any(|output| !output.automatic && matches!(&output.adapter, OutputAdapter::SourceRecording { source_id, .. } if source_id == &source.id)
             && self.output_statuses.iter().any(|status| status.output_id == output.id && (status.desired == DesiredState::Running || status.actual == ActualState::Finalizing)));
         if referenced || routed || active_recording {
             return Err(AppError::Conflict(format!(
@@ -128,11 +130,12 @@ impl Owner {
         }
         let source_id = live_production_media::protocol::SourceId::new(&source.id.0)
             .map_err(|error| AppError::Invalid(error.to_string()))?;
+        self.retire_automatic_recorders(&command.target_id)?;
         let media = self
             .media
             .remove_source(&command.id, self.media.engine_run_id(), source_id)?;
         self.store
-            .delete_ingest_credential(&source.id.0)
+            .delete_ingest_credential(&command.target_id.0)
             .map_err(AppError::Internal)?;
         self.project
             .sources
@@ -151,6 +154,7 @@ impl Owner {
             id: Id::new(),
             name: name.into(),
             adapter: adapter.clone(),
+            automatic: false,
         };
         self.plugins
             .register_output(crate::plugins_factories::OutputFactoryRequest {
@@ -176,6 +180,9 @@ impl Owner {
     }
 
     pub(crate) fn delete_output(&mut self, command: &Command) -> Result<Applied> {
+        if self.output(&command.target_id)?.automatic {
+            return Err(AppError::Conflict("Source recording is automatic; delete the input to retire its recorder. Saved media is retained.".into()));
+        }
         let status = self
             .output_statuses
             .iter()
@@ -186,6 +193,11 @@ impl Owner {
                 "Stop this output before deleting it.".into(),
             ));
         }
+        self.outputs
+            .unregister(&super::coordinator_outputs::media_output_id(
+                &command.target_id,
+            )?)
+            .map_err(|error| AppError::Unavailable(error.to_string()))?;
         self.project
             .outputs
             .retain(|output| output.id != command.target_id);

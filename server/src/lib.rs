@@ -5,6 +5,7 @@ pub mod coordinator;
 mod coordinator_actions;
 mod coordinator_assets;
 mod coordinator_audio;
+mod coordinator_recording;
 mod coordinator_observation;
 mod coordinator_outputs;
 mod coordinator_plugins;

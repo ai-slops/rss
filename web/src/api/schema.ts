@@ -82,6 +82,7 @@ export const audioRouteSchema = z.object({
 
 const outputSchema = z.object({
   id,
+  automatic: z.boolean().optional(),
   name: z.string(),
   adapter: z.discriminatedUnion("kind", [
     z.object({ kind: z.literal("programRecording"), segmentSeconds: z.number() }),

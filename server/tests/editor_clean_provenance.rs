@@ -40,7 +40,13 @@ async fn clean_recording_reconnect_provenance_survives_catalog_reload() {
     })).await;
     assert_eq!(output["status"], "applied", "{output}");
     let ready = harness.snapshot(&cookie).await;
-    let output_id = ready["project"]["outputs"][0]["id"].clone();
+    let output_id = ready["project"]["outputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|output| output["automatic"] == false)
+        .unwrap()["id"]
+        .clone();
     for body in [
         json!({"id":"clean-editor-start","kind":"plugin.command","targetId":EDITOR_PLUGIN_ID,"expectedEngineRunId":initial["engineRunId"],"payload":{"command":"session.start","text":"clean-reconnect"}}),
         json!({"id":"clean-output-start","kind":"output.start","targetId":output_id,"expectedEngineRunId":initial["engineRunId"],"payload":{}}),
@@ -101,20 +107,28 @@ async fn clean_recording_reconnect_provenance_survives_catalog_reload() {
     second
         .set_state(gst::State::Null)
         .expect("stop second sender");
-    let before_reload = export(&harness, &cookie, "clean-export-before", &initial).await;
+    let mut before_reload = export(&harness, &cookie, "clean-export-before", &initial).await;
     let directory = Arc::clone(&harness._directory);
     drop(harness);
     tokio::time::sleep(Duration::from_millis(500)).await;
     let reopened = reopen(directory);
     let reopened_cookie = reopened.login().await;
     let reopened_snapshot = reopened.snapshot(&reopened_cookie).await;
-    let after_reload = export(
+    let mut after_reload = export(
         &reopened,
         &reopened_cookie,
         "clean-export-after",
         &reopened_snapshot,
     )
     .await;
+
+    // Compare the same explicitly created recorder, not an automatic archive.
+    for package in [&mut before_reload, &mut after_reload] {
+        package["mediaInventory"]
+            .as_array_mut()
+            .expect("inventory")
+            .retain(|entry| entry["recording"]["outputId"] == output_id);
+    }
 
     // Then
     eprintln!(

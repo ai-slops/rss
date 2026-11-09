@@ -69,7 +69,7 @@ pub(crate) fn create_source(
                 correction_ms: 0,
             },
         ],
-        record_on_connect: false,
+        record_on_connect: true,
     })
 }
 

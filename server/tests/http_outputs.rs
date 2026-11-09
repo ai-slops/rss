@@ -128,7 +128,13 @@ async fn clean_source_recording_uses_native_source_taps() {
     })).await;
     assert_eq!(created["status"], "applied", "{created}");
     let configured = harness.snapshot(&cookie).await;
-    let output_id = configured["project"]["outputs"][0]["id"].clone();
+    let output_id = configured["project"]["outputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|output| output["automatic"] == false)
+        .unwrap()["id"]
+        .clone();
 
     // When
     let started = harness
@@ -155,7 +161,12 @@ async fn clean_source_recording_uses_native_source_taps() {
     assert_eq!(started["status"], "applied", "{started}");
     assert_eq!(stopped["status"], "applied", "{stopped}");
     let snapshot = harness.snapshot(&cookie).await;
-    let recordings = snapshot["recordings"].as_array().expect("recordings");
+    let recordings: Vec<_> = snapshot["recordings"]
+        .as_array()
+        .expect("recordings")
+        .iter()
+        .filter(|entry| entry["outputId"] == output_id)
+        .collect();
     assert!(recordings.len() >= 2, "{recordings:?}");
     assert!(
         recordings

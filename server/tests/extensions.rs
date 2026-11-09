@@ -53,7 +53,16 @@ async fn builtin_media_factories_are_registered_and_used_by_public_commands() {
     assert_eq!(output["status"], "applied", "{output}");
     let snapshot = coordinator.snapshot().await.expect("factory snapshot");
     assert_eq!(snapshot.project.sources.len(), 1);
-    assert_eq!(snapshot.project.outputs.len(), 1);
+    assert_eq!(snapshot.project.outputs.len(), 2);
+    assert_eq!(
+        snapshot
+            .project
+            .outputs
+            .iter()
+            .filter(|output| output.automatic)
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]

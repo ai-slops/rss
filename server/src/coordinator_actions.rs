@@ -103,6 +103,7 @@ impl Owner {
                         AppError::Internal(anyhow::anyhow!("source index missing"))
                     })?;
                 *source = payload.source.clone();
+                source.record_on_connect = true;
                 self.bump_project()?;
                 Applied {
                     revision: Some(self.project.revision.clone()),

@@ -7,6 +7,8 @@ pub struct Output {
     pub id: Id,
     pub name: String,
     pub adapter: OutputAdapter,
+    #[serde(default)]
+    pub automatic: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]

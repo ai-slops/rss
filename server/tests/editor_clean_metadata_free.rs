@@ -57,7 +57,13 @@ async fn black_silent_reconnect_records_exact_generations_without_consumer_metad
         .await;
     assert_eq!(output["status"], "applied", "{output}");
     let ready = harness.snapshot(&cookie).await;
-    let output_id = ready["project"]["outputs"][0]["id"].clone();
+    let output_id = ready["project"]["outputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|output| output["automatic"] == false)
+        .unwrap()["id"]
+        .clone();
     let started = harness
         .command(
             &cookie,

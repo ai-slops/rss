@@ -24,11 +24,15 @@ impl Owner {
         media: MediaBridge,
         events: broadcast::Sender<()>,
     ) -> Result<Self> {
-        let store = Store::open(&database).map_err(AppError::Internal)?;
+        let mut store = Store::open(&database).map_err(AppError::Internal)?;
         let plugins =
             crate::plugins::PluginRegistry::trusted(&store).map_err(AppError::Internal)?;
         let recovery = SourceRecoveryManager::load_for_run(&store, media.engine_run_id())?;
-        let project = store.load().map_err(AppError::Internal)?;
+        let mut project = store.load().map_err(AppError::Internal)?;
+        if crate::coordinator_recording::prepare_recordings(&mut project) {
+            project.revision = crate::validation::next_revision(&project.revision)?;
+            store.save(&project).map_err(AppError::Internal)?;
+        }
         for source in &project.sources {
             let credential = store
                 .ingest_credential(&source.id.0)
@@ -114,6 +118,8 @@ impl Owner {
             events,
             plugins,
             recovery,
+            automatic_recording_retry: std::collections::HashMap::new(),
+            automatic_recording_connected: std::collections::HashSet::new(),
         })
     }
 

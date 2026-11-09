@@ -60,7 +60,13 @@ async fn coordinator_source_scene_take_and_recording_drive_real_program_media() 
         )
         .await;
     let configured = harness.snapshot(&cookie).await;
-    let output_id = configured["project"]["outputs"][0]["id"].clone();
+    let output_id = configured["project"]["outputs"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|output| output["automatic"] == false)
+        .unwrap()["id"]
+        .clone();
     let started = harness
         .command(
             &cookie,
@@ -99,7 +105,12 @@ async fn coordinator_source_scene_take_and_recording_drive_real_program_media() 
     );
     assert!(final_snapshot["engineClock"]["wallTime"].is_string());
     assert!(final_snapshot["engineClock"]["uncertainty"].is_string());
-    let recordings = final_snapshot["recordings"].as_array().expect("recordings");
+    let recordings: Vec<_> = final_snapshot["recordings"]
+        .as_array()
+        .expect("recordings")
+        .iter()
+        .filter(|recording| recording["outputId"] == output_id)
+        .collect();
     assert!(recordings.len() >= 2, "{recordings:?}");
     assert!(
         recordings

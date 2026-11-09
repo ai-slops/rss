@@ -45,7 +45,9 @@ impl Owner {
     }
 
     pub(crate) fn stop_output(&mut self, command: &Command) -> Result<Applied> {
-        self.output(&command.target_id)?;
+        if self.output(&command.target_id)?.automatic {
+            return Err(AppError::Conflict("All inputs are recorded automatically. This recorder stops when its input is removed.".into()));
+        }
         let id = media_output_id(&command.target_id)?;
         self.outputs
             .stop(&id)
@@ -67,7 +69,7 @@ impl Owner {
         }
     }
 
-    fn refresh_output(&mut self, output_id: &Id) {
+    pub(crate) fn refresh_output(&mut self, output_id: &Id) {
         let Ok(id) = media_output_id(output_id) else {
             return;
         };
@@ -86,7 +88,7 @@ impl Owner {
         }
     }
 
-    fn refresh_recordings(&mut self, output_id: &Id) -> Result<()> {
+    pub(crate) fn refresh_recordings(&mut self, output_id: &Id) -> Result<()> {
         let output = self.output(output_id)?.clone();
         if matches!(output.adapter, OutputAdapter::Rtmps { .. }) {
             return Ok(());
@@ -137,7 +139,7 @@ impl Owner {
         Ok(())
     }
 
-    fn output(&self, id: &Id) -> Result<&crate::model::Output> {
+    pub(crate) fn output(&self, id: &Id) -> Result<&crate::model::Output> {
         self.project
             .outputs
             .iter()
@@ -161,7 +163,7 @@ const fn mapping_status(mapping: RecordingMapping) -> &'static str {
     }
 }
 
-fn media_output_id(id: &Id) -> Result<live_production_media::output::OutputId> {
+pub(crate) fn media_output_id(id: &Id) -> Result<live_production_media::output::OutputId> {
     live_production_media::output::OutputId::new(&id.0)
         .map_err(|error| AppError::Invalid(error.to_string()))
 }

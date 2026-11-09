@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "private_files_windows.hpp"
 
 #include <obs-data.h>
 
@@ -52,6 +53,9 @@ bool valid_recovery_url(const std::string &url, const std::string &source_id) {
 }
 
 bool is_private_regular_file(const std::string &path, std::string &error) {
+#ifdef _WIN32
+  return private_windows_path(path, false, error);
+#else
   struct stat info {};
   if (lstat(path.c_str(), &info) != 0) {
     error = "cannot stat private configuration file";
@@ -66,6 +70,7 @@ bool is_private_regular_file(const std::string &path, std::string &error) {
     return false;
   }
   return true;
+#endif
 }
 
 bool load_publisher_config(const std::string &path, PublisherConfig &config,

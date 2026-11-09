@@ -6,14 +6,43 @@ include(CTest)
 
 find_package(libobs REQUIRED)
 find_package(obs-frontend-api REQUIRED)
+if(TARGET OBS::frontend-api AND NOT TARGET OBS::obs-frontend-api)
+  add_library(OBS::obs-frontend-api ALIAS OBS::frontend-api)
+endif()
 find_package(Threads REQUIRED)
 find_package(Qt6 REQUIRED COMPONENTS Network Widgets)
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(LIVE_FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil)
-pkg_check_modules(LIVE_SRT REQUIRED IMPORTED_TARGET srt)
-add_executable(obs-live-production-srt src/live_srt_helper.cpp)
+if(WIN32)
+  add_compile_definitions(WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
+  find_path(LIVE_FFMPEG_INCLUDE_DIR libavformat/avformat.h REQUIRED)
+  add_library(live-ffmpeg INTERFACE)
+  target_include_directories(live-ffmpeg INTERFACE "${LIVE_FFMPEG_INCLUDE_DIR}")
+  foreach(component avformat avcodec avutil)
+    find_library(LIVE_${component}_LIBRARY NAMES ${component} REQUIRED)
+    target_link_libraries(live-ffmpeg INTERFACE "${LIVE_${component}_LIBRARY}")
+  endforeach()
+  add_library(PkgConfig::LIVE_FFMPEG ALIAS live-ffmpeg)
+  find_path(LIVE_SRT_INCLUDE_DIR srt/srt.h REQUIRED)
+  find_library(LIVE_SRT_LIBRARY NAMES srt REQUIRED)
+  add_library(live-srt INTERFACE)
+  target_compile_definitions(live-srt INTERFACE SRT_DYNAMIC)
+  target_include_directories(live-srt INTERFACE "${LIVE_SRT_INCLUDE_DIR}")
+  target_link_libraries(live-srt INTERFACE "${LIVE_SRT_LIBRARY}" ws2_32)
+  add_library(PkgConfig::LIVE_SRT ALIAS live-srt)
+  set(LIVE_TRANSPORT_SOURCE src/live_srt_transport_windows.cpp)
+  set(LIVE_STORE_SOURCE src/recovery_store_windows.cpp)
+  set(LIVE_HELPER_SOURCE src/live_srt_helper_windows.cpp)
+else()
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(LIVE_FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libavutil)
+  pkg_check_modules(LIVE_SRT REQUIRED IMPORTED_TARGET srt)
+  set(LIVE_TRANSPORT_SOURCE src/live_srt_transport.cpp)
+  set(LIVE_STORE_SOURCE src/recovery_store.cpp)
+  set(LIVE_HELPER_SOURCE src/live_srt_helper.cpp)
+endif()
+add_executable(obs-live-production-srt ${LIVE_HELPER_SOURCE})
 target_compile_features(obs-live-production-srt PRIVATE cxx_std_17)
-target_compile_options(obs-live-production-srt PRIVATE -Wall -Wextra -Wpedantic -Werror)
+target_compile_options(obs-live-production-srt PRIVATE
+  $<$<CXX_COMPILER_ID:GNU,Clang>:-Wall -Wextra -Wpedantic -Werror>)
 target_link_libraries(obs-live-production-srt PRIVATE PkgConfig::LIVE_SRT)
 
 add_library(obs-live-production MODULE
@@ -30,7 +59,7 @@ add_library(obs-live-production MODULE
   src/live_packet.cpp
   src/live_queue.cpp
   src/live_srt_output.cpp
-  src/live_srt_transport.cpp
+  ${LIVE_TRANSPORT_SOURCE}
   src/module_runtime.cpp
   src/module_runtime_actions.cpp
   src/module_runtime_poll.cpp
@@ -44,7 +73,7 @@ add_library(obs-live-production MODULE
   src/recovery_fixture_commands.cpp
   src/recovery_model.cpp
   src/recovery_protocol.cpp
-  src/recovery_store.cpp
+  ${LIVE_STORE_SOURCE}
   src/report.cpp
   src/srt_url.cpp
 )
@@ -63,6 +92,9 @@ target_link_libraries(obs-live-production PRIVATE
   ${CMAKE_DL_LIBS}
 )
 set_target_properties(obs-live-production PROPERTIES PREFIX "")
+if(WIN32)
+  target_link_libraries(obs-live-production PRIVATE advapi32 ws2_32)
+endif()
 add_dependencies(obs-live-production obs-live-production-srt)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_custom_command(TARGET obs-live-production POST_BUILD
@@ -71,7 +103,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     VERBATIM)
 endif()
 
-if(BUILD_TESTING)
+if(BUILD_TESTING AND NOT WIN32)
   add_executable(obs-live-production-live-queue-test
     tests/live_queue_test.cpp src/live_packet.cpp src/live_queue.cpp)
   target_compile_features(obs-live-production-live-queue-test PRIVATE cxx_std_17)
@@ -291,9 +323,20 @@ if(BUILD_TESTING)
   add_dependencies(obs-live-production-live-timestamp-test obs-live-production-srt)
 endif()
 
+if(BUILD_TESTING AND WIN32)
+  add_executable(obs-live-production-windows-store-test
+    tests/windows_private_store_test.cpp src/config.cpp src/recovery_model.cpp src/recovery_store_windows.cpp)
+  target_compile_features(obs-live-production-windows-store-test PRIVATE cxx_std_17)
+  target_include_directories(obs-live-production-windows-store-test PRIVATE src)
+  target_link_libraries(obs-live-production-windows-store-test PRIVATE OBS::libobs Qt6::Network advapi32)
+  add_test(NAME obs-live-production-windows-store-test COMMAND obs-live-production-windows-store-test)
+  set_tests_properties(obs-live-production-windows-store-test PROPERTIES TIMEOUT 15)
+endif()
+
 install(TARGETS obs-live-production-srt RUNTIME DESTINATION "bin/64bit")
 install(TARGETS obs-live-production
   LIBRARY DESTINATION "bin/64bit"
+  RUNTIME DESTINATION "bin/64bit"
 )
 install(DIRECTORY data/
   DESTINATION "data/obs-plugins/obs-live-production"

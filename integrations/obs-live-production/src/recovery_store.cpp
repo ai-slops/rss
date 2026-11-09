@@ -92,6 +92,7 @@ bool write_all(int fd, const std::string &value) {
 
 }
 
+RecoveryStore::RecoveryStore() = default;
 RecoveryStore::~RecoveryStore() { close(); }
 
 bool RecoveryStore::open(const std::string &directory,

@@ -1,4 +1,5 @@
 #include "recovery_fixture.hpp"
+#include "private_files_windows.hpp"
 
 #include "config.hpp"
 #include "fixture_source.hpp"
@@ -199,8 +200,15 @@ void RecoveryFixture::write_report(const std::string &state) {
          << "\",\"executedCommandResult\":\"" << escape(last_command_result_)
          << "\",\"receiverState\":\"" << snapshot.receiver_state << "\"}\n";
   output.close();
+#ifdef _WIN32
+  const auto temporary = report_file_ + ".tmp";
+  if (secure_windows_path(temporary))
+    MoveFileExW(QString::fromStdString(temporary).toStdWString().c_str(),
+                QString::fromStdString(report_file_).toStdWString().c_str(), MOVEFILE_REPLACE_EXISTING);
+#else
   chmod((report_file_ + ".tmp").c_str(), 0600);
   rename((report_file_ + ".tmp").c_str(), report_file_.c_str());
+#endif
 }
 
 void RecoveryFixture::stop() {

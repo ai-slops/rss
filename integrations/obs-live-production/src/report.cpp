@@ -1,4 +1,5 @@
 #include "report.hpp"
+#include "private_files_windows.hpp"
 
 #include <obs.h>
 
@@ -72,12 +73,21 @@ bool write_report(const std::string &path,
     error = "cannot finalize fixture report";
     return false;
   }
+#ifdef _WIN32
+  if (!secure_windows_path(temporary)) {
+#else
   if (chmod(temporary.c_str(), 0600) != 0) {
+#endif
     remove(temporary.c_str());
     error = "cannot secure fixture report";
     return false;
   }
+#ifdef _WIN32
+  if (!MoveFileExW(QString::fromStdString(temporary).toStdWString().c_str(),
+                   QString::fromStdString(path).toStdWString().c_str(), MOVEFILE_REPLACE_EXISTING)) {
+#else
   if (rename(temporary.c_str(), path.c_str()) != 0) {
+#endif
     remove(temporary.c_str());
     error = "cannot publish fixture report";
     return false;

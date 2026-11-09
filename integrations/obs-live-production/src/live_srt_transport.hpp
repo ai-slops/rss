@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cstdint>
 #include <string>
+#include <memory>
 
 #include <mutex>
 #include <QHostAddress>
@@ -31,6 +32,10 @@ class LiveSrtTransport {
   std::atomic<uint64_t> sent_bytes_{0};
   std::atomic<bool> interrupted_{false};
   std::atomic<int> lookup_id_{-1};
+#ifdef _WIN32
+  class WindowsSession;
+  std::unique_ptr<WindowsSession> windows_;
+#endif
 };
 
 }

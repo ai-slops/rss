@@ -1,6 +1,7 @@
 use std::{
     collections::HashMap,
     sync::{Arc, Mutex, Weak, mpsc},
+    time::{Duration, Instant},
 };
 
 use gst::prelude::*;
@@ -33,6 +34,17 @@ pub struct SourceCapture {
 }
 
 impl SourceCapture {
+    pub(crate) fn has_recent_media(&self) -> bool {
+        [&self.video, &self.audio].into_iter().any(|track| {
+            track
+                .state
+                .lock()
+                .ok()
+                .and_then(|state| state.latest_received)
+                .is_some_and(|received| received.elapsed() < Duration::from_secs(1))
+        })
+    }
+
     pub(crate) fn recording_origin(&self, anchor_media_pts: u64) -> u64 {
         [self.video.latest_media_pts(), self.audio.latest_media_pts()]
             .into_iter()
@@ -182,6 +194,7 @@ struct TrackCaptureState {
     next_subscriber_id: u64,
     next_sequence: u64,
     latest_media_pts: Option<u64>,
+    latest_received: Option<Instant>,
     subscribers: HashMap<u64, Subscriber>,
 }
 
@@ -242,6 +255,7 @@ impl TrackCapture {
         let sequence = state.next_sequence;
         state.next_sequence = state.next_sequence.saturating_add(1);
         state.latest_media_pts = Some(stamp.media_pts_ns);
+        state.latest_received = Some(Instant::now());
         let packet = SourceCapturePacket {
             buffer,
             caps,

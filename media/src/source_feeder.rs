@@ -21,6 +21,7 @@ use crate::{
 };
 
 pub struct SourceFeeders {
+    capture: SourceCapture,
     stopped: Arc<AtomicBool>,
     error: Arc<Mutex<Option<String>>>,
     controls: Vec<TrackSubscription>,
@@ -76,6 +77,7 @@ impl SourceFeeders {
         let stopped = Arc::new(AtomicBool::new(false));
         let error = Arc::new(Mutex::new(None));
         let mut feeders = Self {
+            capture: start.capture.clone(),
             stopped,
             error,
             controls: vec![subscription.video, subscription.audio],
@@ -97,6 +99,10 @@ impl SourceFeeders {
         )?;
         feeders.workers.push(audio_worker);
         Ok(feeders)
+    }
+
+    pub fn waiting_for_source(&self) -> bool {
+        !self.capture.has_recent_media()
     }
 
     pub fn error(&self) -> Option<String> {

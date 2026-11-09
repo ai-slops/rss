@@ -92,6 +92,29 @@ impl OutputManager {
         Ok(recordings)
     }
 
+    pub fn unregister(&self, id: &OutputId) -> Result<(), OutputError> {
+        let mut owner = self
+            .owners
+            .lock()
+            .map_err(|_| OutputError::OwnerStopped)?
+            .remove(id)
+            .ok_or(OutputError::UnknownOutput)?;
+        let (reply, response) = mpsc::sync_channel(1);
+        let result = owner
+            .sender
+            .send(OwnerCommand::shutdown(reply))
+            .map_err(|_| OutputError::OwnerStopped)
+            .and_then(|()| response.recv().map_err(|_| OutputError::OwnerStopped)?);
+        if owner
+            .worker
+            .take()
+            .is_some_and(|worker| worker.join().is_err())
+        {
+            return Err(OutputError::OwnerStopped);
+        }
+        result
+    }
+
     pub fn shutdown(&self) -> Result<(), OutputError> {
         let mut owners = self.owners.lock().map_err(|_| OutputError::OwnerStopped)?;
         let mut first_error = None;

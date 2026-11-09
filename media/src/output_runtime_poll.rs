@@ -41,6 +41,14 @@ impl ActivePipeline {
             }
             return PipelinePoll::Progress;
         }
+        if self
+            .source_feeders
+            .as_ref()
+            .is_some_and(SourceFeeders::waiting_for_source)
+        {
+            self.last_progress = Instant::now();
+            return PipelinePoll::NoProgress;
+        }
         if self.last_progress.elapsed() >= STALL_TIMEOUT {
             PipelinePoll::Unhealthy("Output pipeline made no progress for five seconds.".to_owned())
         } else {

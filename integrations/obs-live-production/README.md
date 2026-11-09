@@ -7,7 +7,10 @@ server inputs; OBS scenes and groups are not flattened into one stream. Each inp
 gets an independent video view, encoder, SRT process and source-audio capture. OBS
 source mute is respected. A first grid layout is prepared in the web studio; use
 Take there to apply it. Later starts preserve web layout edits. Stop all and start
-again to discover inputs added after publishing began.
+again to discover inputs added after publishing began. Every view follows the OBS
+video clock, including the small carrier for standalone audio. Set OBS Settings →
+Video to 60 fps for native 60 fps capture; the server normalizes Program output
+to its configured 60 fps profile.
 
 The connection JSON contains `schemaVersion: 1`, `serverUrl` (HTTPS),
 `sourceHost`, `caCertificatePem` and `password` (the operator credential). Treat it

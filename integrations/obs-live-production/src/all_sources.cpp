@@ -109,6 +109,8 @@ bool AllSourcesPublisher::start(const QString &connection_file, QString &error) 
       auto authorities = ssl.caCertificates(); authorities.append(certificates); ssl.setCaCertificates(authorities);
       QSslConfiguration::setDefaultConfiguration(ssl);
     }
+    obs_video_info obs_video {};
+    if (!obs_get_video_info(&obs_video) || !obs_video.fps_num || !obs_video.fps_den) throw std::runtime_error("OBS video is not initialized");
     const auto sources = enumerate_sources();
     if (sources.empty()) throw std::runtime_error("No individual OBS input sources were found");
     request("POST", "/auth/login", {{"password", config.take("password")}});
@@ -153,7 +155,9 @@ bool AllSourcesPublisher::start(const QString &connection_file, QString &error) 
       double scale = video ? std::min({1.0, 1920.0 / native_width, 1080.0 / native_height}) : 1.0;
       publisher.encoding.width = video ? std::max(16u, uint32_t(native_width * scale) / 2 * 2) : 16;
       publisher.encoding.height = video ? std::max(16u, uint32_t(native_height * scale) / 2 * 2) : 16;
-      publisher.encoding.fps_numerator = video ? 60 : 1; publisher.encoding.fps_denominator = 1;
+      // OBS renders every view on its main video clock. A different view FPS
+      // stretches encoder time and stalls paired audio, including audio-only inputs.
+      publisher.encoding.fps_numerator = obs_video.fps_num; publisher.encoding.fps_denominator = obs_video.fps_den;
       publisher.encoding.video_bitrate_kbps = video ? 8000 : 64; publisher.encoding.audio_sample_rate = 48000;
       auto instance = std::make_unique<Publisher>(publisher, "individual-" + publisher.target.source_id, [] {});
       std::string failure;

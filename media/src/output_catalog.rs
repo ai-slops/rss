@@ -167,6 +167,7 @@ fn inspect_all(
 ) -> Result<Vec<RecordingSegment>, OutputError> {
     raw_paths(directory)?
         .into_iter()
+        .filter(|path| !empty_waiting_fragment(path, metadata))
         .map(|path| {
             output_fragment::inspect(&path, context(metadata, clock, recovery), gaps.to_vec())
         })
@@ -175,4 +176,41 @@ fn inspect_all(
 
 fn same_file(left: &Path, right: &Path) -> bool {
     left.file_name() == right.file_name()
+}
+
+// A cleanly stopped, never-fed appsrc pipeline can leave a zero-byte placeholder.
+// Keep the file, but do not present it as damaged captured media.
+pub fn empty_waiting_fragment(path: &Path, metadata: &SessionMetadata) -> bool {
+    metadata.state == output_session::SessionState::Complete
+        && metadata.provenance.is_empty()
+        && fs::metadata(path).is_ok_and(|file| file.len() == 0)
+}
+
+#[cfg(test)]
+mod waiting_tests {
+    use super::*;
+
+    #[test]
+    fn empty_complete_wait_is_not_media_but_failed_empty_capture_remains_visible()
+    -> anyhow::Result<()> {
+        let root = tempfile::tempdir()?;
+        let mut session = output_session::RecordingSession::begin(output_session::SessionStart {
+            root: root.path(),
+            engine_run_id: None,
+            clock_anchor: None,
+            wall_start_ns: 1,
+        })?;
+        let path = session.directory.join("segment-00000.mkv");
+        fs::write(&path, [])?;
+        session.finish(output_session::SessionState::Complete, 2)?;
+        assert!(finalize(&session, None)?.is_empty());
+        assert!(load(root.path())?.is_empty());
+        assert!(path.is_file());
+        session.finish(output_session::SessionState::Failed, 3)?;
+        let failed = load(root.path())?;
+        assert_eq!(failed.len(), 1);
+        assert!(!failed[0].decoded);
+        assert!(failed[0].gaps.iter().any(|gap| gap == "recording_failed"));
+        Ok(())
+    }
 }

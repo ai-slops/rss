@@ -41,6 +41,9 @@ fn recover_directory(directory: &Path) -> Result<Vec<RecordingSegment>, OutputEr
     let paths = output_catalog::raw_paths(directory)?;
     let mut recordings = Vec::new();
     for path in &paths {
+        if output_catalog::empty_waiting_fragment(path, &session.metadata) {
+            continue;
+        }
         let name = file_name(path)?;
         let mut gaps = session.metadata.gaps.clone();
         output_catalog::extend_unique(&mut gaps, &issues);

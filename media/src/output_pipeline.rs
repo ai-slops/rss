@@ -37,7 +37,7 @@ pub fn source_recording_pipeline(
 pub fn rtmps_pipeline(tap: &MediaTap, file_descriptor: i32) -> Result<gst::Pipeline, OutputError> {
     parse(&format!(
         "flvmux name=network_mux streamable=true enforce-increasing-timestamps=true ! identity name=output_activity ! fdsink fd={file_descriptor} async=false sync=false \
-         intervideosrc channel={} timeout=1000000000 ! queue max-size-time=2000000000 ! videoconvert ! video/x-raw,format=I420 ! x264enc tune=zerolatency speed-preset=veryfast key-int-max=60 bitrate=2500 ! h264parse config-interval=-1 ! network_mux.video \
+         intervideosrc channel={} timeout=1000000000 ! queue max-size-time=2000000000 ! videoconvert ! videoscale ! videorate ! video/x-raw,format=I420,width=1920,height=1080,framerate=60/1 ! x264enc tune=zerolatency speed-preset=veryfast pass=cbr key-int-max=60 bitrate=8000 vbv-buf-capacity=1000 option-string=nal-hrd=cbr ! h264parse config-interval=-1 ! network_mux.video \
          interaudiosrc channel={} buffer-time=500000000 latency-time=25000000 ! queue max-size-time=2000000000 ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=128000 ! aacparse ! network_mux.audio",
         tap.video_channel(),
         tap.audio_channel()

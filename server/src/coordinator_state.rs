@@ -29,7 +29,8 @@ impl Owner {
             crate::plugins::PluginRegistry::trusted(&store).map_err(AppError::Internal)?;
         let recovery = SourceRecoveryManager::load_for_run(&store, media.engine_run_id())?;
         let mut project = store.load().map_err(AppError::Internal)?;
-        if crate::coordinator_recording::prepare_recordings(&mut project) {
+        let canvas_changed = crate::media_bridge_pipeline::apply_canvas_profile(&mut project)?;
+        if crate::coordinator_recording::prepare_recordings(&mut project) || canvas_changed {
             project.revision = crate::validation::next_revision(&project.revision)?;
             store.save(&project).map_err(AppError::Internal)?;
         }

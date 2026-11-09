@@ -128,3 +128,11 @@ export async function revokeSourceRecoveryController(sourceId: string): Promise<
 export function commandId(): string {
   return crypto.randomUUID()
 }
+
+export async function provisionDestination(destinationId: string, url: string): Promise<void> {
+  try {
+    await api.post("output-destinations", { json: { destinationId, url } })
+  } catch (error) {
+    return translateError(error)
+  }
+}

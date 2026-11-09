@@ -126,7 +126,7 @@ pub struct DestinationUrl(String);
 
 impl DestinationUrl {
     pub fn new(value: &str) -> Result<Self, OutputError> {
-        let valid = value.starts_with("rtmps://")
+        let valid = (value.starts_with("rtmps://") || value.starts_with("rtmp://"))
             && value.len() <= 2_048
             && !value
                 .bytes()
@@ -229,7 +229,7 @@ const fn complete_recovery() -> RecordingRecovery {
 pub enum OutputError {
     #[error("output is already registered")]
     AlreadyRegistered,
-    #[error("destination must be an RTMPS URL")]
+    #[error("destination must be an RTMP or RTMPS URL")]
     InvalidDestination,
     #[error("output identifier is invalid")]
     InvalidIdentifier,
@@ -247,4 +247,16 @@ pub enum OutputError {
     RecordingFinalization,
     #[error("output is not registered")]
     UnknownOutput,
+}
+
+#[cfg(test)]
+mod destination_tests {
+    use super::DestinationUrl;
+    #[test]
+    fn accepts_both_streaming_transports_and_rejects_other_schemes() {
+        assert!(DestinationUrl::new("rtmp://localhost:1935/live/test").is_ok());
+        assert!(DestinationUrl::new("rtmps://localhost:443/live/test").is_ok());
+        assert!(DestinationUrl::new("https://localhost/live/test").is_err());
+        assert!(DestinationUrl::new("rtmp://localhost/live/secret\n").is_err());
+    }
 }

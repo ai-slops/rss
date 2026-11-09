@@ -14,6 +14,9 @@ services:
     tmpfs:
       - /tmp:rw,nosuid,nodev,size=256m,mode=1777
     environment:
+      LIVE_PRODUCTION_VIDEO_WIDTH: "1920"
+      LIVE_PRODUCTION_VIDEO_HEIGHT: "1080"
+      LIVE_PRODUCTION_VIDEO_FPS: "60"
       LIVE_PRODUCTION_PREVIEW_NETWORK_CONFIG: /run/preview-network.json
     volumes:
       - ../var/production/state:/state

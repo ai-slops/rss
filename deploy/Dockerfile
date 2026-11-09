@@ -1,7 +1,7 @@
 # Build context: output of scripts/package-server.sh (contains app/).
 FROM ubuntu:24.04 AS runtime
 RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    ca-certificates curl libssl3t64 libglib2.0-0t64 libgstreamer1.0-0 \
+    ca-certificates curl ffmpeg libssl3t64 libglib2.0-0t64 libgstreamer1.0-0 \
     gstreamer1.0-tools gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly gstreamer1.0-libav \
     gstreamer1.0-nice gstreamer1.0-x \

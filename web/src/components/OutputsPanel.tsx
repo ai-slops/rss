@@ -44,7 +44,7 @@ export function OutputsPanel({ snapshot, disabled, onCommand }: OutputsPanelProp
                 <div className="row-copy"><strong>{output.name}</strong><small>{output.adapter.kind} · desired {status?.desired ?? "unknown"}</small></div>
                 <div className="output-state"><StatusChip tone={status?.actual === "running" ? "healthy" : status?.actual === "failed" ? "danger" : status?.actual === "retrying" ? "warning" : "neutral"}>{status?.actual?.toUpperCase() ?? "UNKNOWN"}</StatusChip><small>{status?.platformStatus ?? "Platform status unknown"}</small></div>
                 <span className="telemetry">{status?.lastMediaAtNs === null || status?.lastMediaAtNs === undefined ? "No media observed" : `media ${status.lastMediaAtNs}`}</span>
-                {output.automatic ? <span>Automatic · {status?.actual === "failed" ? "Recording error" : status?.lastMediaAtNs ? "Recording" : "Waiting for input"}</span> : <Button disabled={disabled} icon={active ? Stop : publicRisk ? Broadcast : Circle} onClick={() => {
+                {output.automatic ? <span>Automatic · {status?.actual === "failed" ? "Recording error" : status?.actual === "running" ? "Recording" : "Waiting for input"}</span> : <Button disabled={disabled} icon={active ? Stop : publicRisk ? Broadcast : Circle} onClick={() => {
                   if (!active && publicRisk && !window.confirm(`Start sending to ${output.name}? Media may become public immediately.`)) return
                   onCommand(active ? "output.stop" : "output.start", output.id, active ? {} : { confirmPublic: publicRisk })
                 }} tone={active ? "danger" : publicRisk ? "program" : "neutral"}>{active ? "Stop" : publicRisk ? "Start sending" : "Start"}</Button>}

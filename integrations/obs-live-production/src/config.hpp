@@ -22,6 +22,7 @@ struct ObsConfig {
   std::string source_name;
   std::string source_uuid;
   uint32_t audio_mix_index = 0;
+  bool source_audio = false;
 };
 
 struct EncodingConfig {

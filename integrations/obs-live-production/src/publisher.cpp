@@ -1,4 +1,5 @@
 #include "publisher.hpp"
+#include "source_audio.hpp"
 
 #include <obs-module.h>
 
@@ -88,12 +89,18 @@ bool Publisher::initialize(std::string &error) {
   const std::string audio_name = "live-production-audio-" + instance_name_;
   audio_encoder_ = obs_audio_encoder_create(
       "ffmpeg_aac", audio_name.c_str(), audio_config,
-      config_.obs.audio_mix_index, nullptr);
+      config_.obs.source_audio ? 0 : config_.obs.audio_mix_index, nullptr);
   obs_data_release(audio_config);
   if (!video_encoder_ || !audio_encoder_)
     return fail("required obs_x264 or ffmpeg_aac encoder is unavailable");
   obs_encoder_set_video(video_encoder_, video_);
-  obs_encoder_set_audio(audio_encoder_, obs_get_audio());
+  if (config_.obs.source_audio) {
+    source_audio_ = std::make_unique<SourceAudio>(source_);
+    if (!source_audio_->initialize()) return fail("cannot initialize independent source audio");
+    obs_encoder_set_audio(audio_encoder_, source_audio_->output());
+  } else {
+    obs_encoder_set_audio(audio_encoder_, obs_get_audio());
+  }
 
   obs_data_t *settings = output_settings(config_);
   const std::string output_name = "live-production-output-" + instance_name_;
@@ -215,6 +222,7 @@ void Publisher::release() {
     obs_encoder_release(audio_encoder_);
   if (video_encoder_)
     obs_encoder_release(video_encoder_);
+  source_audio_.reset();
   if (view_) {
     if (video_)
       obs_view_remove(view_);

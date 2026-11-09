@@ -112,6 +112,7 @@ bool load_publisher_config(const std::string &path, PublisherConfig &config,
   config.target.stream_id = text(target, "streamId");
   config.obs.source_name = text(obs, "sourceName");
   config.obs.source_uuid = text(obs, "sourceUuid");
+  config.obs.source_audio = obs_data_get_bool(obs, "sourceAudio");
   if (recovery) {
     RecoveryConfig value;
     value.schema_version = static_cast<uint32_t>(obs_data_get_int(recovery, "schemaVersion"));

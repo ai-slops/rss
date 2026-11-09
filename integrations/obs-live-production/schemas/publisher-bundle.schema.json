@@ -3,56 +3,155 @@
   "title": "Live Production OBS Publisher Bundle",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "target", "obs", "encoding"],
+  "required": [
+    "schemaVersion",
+    "target",
+    "obs",
+    "encoding"
+  ],
   "properties": {
-    "schemaVersion": {"const": 1},
+    "schemaVersion": {
+      "const": 1
+    },
     "target": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceId", "videoTrackId", "audioTrackId", "host", "port", "passphrase", "streamId", "bufferMs"],
+      "required": [
+        "sourceId",
+        "videoTrackId",
+        "audioTrackId",
+        "host",
+        "port",
+        "passphrase",
+        "streamId",
+        "bufferMs"
+      ],
       "properties": {
-        "sourceId": {"type": "string", "minLength": 1},
-        "videoTrackId": {"type": "string", "minLength": 1},
-        "audioTrackId": {"type": "string", "minLength": 1},
-        "host": {"type": "string", "minLength": 1},
-        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
-        "passphrase": {"type": "string", "minLength": 10, "maxLength": 79},
-        "streamId": {"type": "string", "minLength": 1},
-        "bufferMs": {"type": "integer", "minimum": 1}
+        "sourceId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "videoTrackId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "audioTrackId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "host": {
+          "type": "string",
+          "minLength": 1
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "passphrase": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 79
+        },
+        "streamId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "bufferMs": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "obs": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["sourceName", "audioMixIndex"],
+      "required": [
+        "sourceName",
+        "audioMixIndex"
+      ],
       "properties": {
-        "sourceName": {"type": "string", "minLength": 1},
-        "sourceUuid": {"type": "string", "minLength": 1},
-        "audioMixIndex": {"type": "integer", "minimum": 0, "maximum": 5}
+        "sourceName": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sourceUuid": {
+          "type": "string",
+          "minLength": 1
+        },
+        "audioMixIndex": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 5
+        },
+        "sourceAudio": {
+          "type": "boolean",
+          "default": false
+        }
       }
     },
     "encoding": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["width", "height", "fpsNumerator", "fpsDenominator", "audioSampleRate", "videoBitrateKbps"],
+      "required": [
+        "width",
+        "height",
+        "fpsNumerator",
+        "fpsDenominator",
+        "audioSampleRate",
+        "videoBitrateKbps"
+      ],
       "properties": {
-        "width": {"type": "integer", "minimum": 1},
-        "height": {"type": "integer", "minimum": 1},
-        "fpsNumerator": {"type": "integer", "minimum": 1},
-        "fpsDenominator": {"type": "integer", "minimum": 1},
-        "audioSampleRate": {"const": 48000},
-        "videoBitrateKbps": {"type": "integer", "minimum": 1}
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fpsNumerator": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fpsDenominator": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "audioSampleRate": {
+          "const": 48000
+        },
+        "videoBitrateKbps": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "recovery": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["schemaVersion", "controlUrl", "controllerId", "controllerToken"],
+      "required": [
+        "schemaVersion",
+        "controlUrl",
+        "controllerId",
+        "controllerToken"
+      ],
       "properties": {
-        "schemaVersion": {"const": 1},
-        "controlUrl": {"type": "string", "minLength": 1},
-        "controllerId": {"type": "string", "minLength": 1},
-        "controllerToken": {"type": "string", "minLength": 16}
+        "schemaVersion": {
+          "const": 1
+        },
+        "controlUrl": {
+          "type": "string",
+          "minLength": 1
+        },
+        "controllerId": {
+          "type": "string",
+          "minLength": 1
+        },
+        "controllerToken": {
+          "type": "string",
+          "minLength": 16
+        }
       }
     }
   }

@@ -90,9 +90,13 @@ $Package = Join-Path $WorkRoot 'package\obs-live-production'
 New-Item "$Package\bin\64bit" -ItemType Directory -Force | Out-Null
 Copy-Item "$Stage\bin\64bit\*" "$Package\bin\64bit" -Force
 Copy-Item "$DepsRoot\bin\srt.dll" "$Package\bin\64bit" -Force
+New-Item "$Package\bin\64bit\tls" -ItemType Directory -Force | Out-Null
+Copy-Item "$QtRoot\plugins\tls\qschannelbackend.dll" "$Package\bin\64bit\tls" -Force
 New-Item "$Package\data" -ItemType Directory -Force | Out-Null
 Copy-Item "$Stage\data\obs-plugins\obs-live-production\*" "$Package\data" -Recurse -Force
 New-Item "$Package\data\licenses" -ItemType Directory -Force | Out-Null
 Copy-Item "$DepsRoot\licenses\srt\LICENSE" "$Package\data\licenses\srt-LICENSE.txt" -Force
+New-Item "$Package\data\licenses\qt6" -ItemType Directory -Force | Out-Null
+Copy-Item "$QtRoot\licenses\qt6\*" "$Package\data\licenses\qt6" -Force
 Compress-Archive $Package "$WorkRoot\obs-live-production-obs33-windows-x64.zip" -Force
 Write-Host "Windows package: $WorkRoot\obs-live-production-obs33-windows-x64.zip"

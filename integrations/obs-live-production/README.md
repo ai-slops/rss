@@ -1,6 +1,21 @@
 # OBS Live Production Publisher
 
-This out-of-tree OBS Studio plugin publishes a selected OBS source or
+Use **Tools → Live Production SRT Publisher → Send all individual OBS sources**
+with a private server connection file to register and publish every current OBS
+input separately. Cameras, captures, media and standalone audio remain separate
+server inputs; OBS scenes and groups are not flattened into one stream. Each input
+gets an independent video view, encoder, SRT process and source-audio capture. OBS
+source mute is respected. A first grid layout is prepared in the web studio; use
+Take there to apply it. Later starts preserve web layout edits. Stop all and start
+again to discover inputs added after publishing began.
+
+The connection JSON contains `schemaVersion: 1`, `serverUrl` (HTTPS),
+`sourceHost`, `caCertificatePem` and `password` (the operator credential). Treat it
+as a private credential file. Source UUID bindings are stored per user without
+credentials. Forward UDP 9000–9015 to the server; each source needs one free port.
+Windows packages include the Qt Schannel TLS backend alongside the plugin.
+
+The manual single-source mode publishes a selected OBS source or
 scene through an independent H.264/AAC MPEG-TS SRT output. Video uses a
 dedicated `obs_view`; audio uses one explicit OBS mix index from `0` through
 `5`. The reusable publisher core accepts ordinary remote SRT targets. Only the

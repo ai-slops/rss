@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDialog>
+#include <memory>
 
 class QCheckBox;
 class QLabel;
@@ -12,10 +13,12 @@ class QWidget;
 namespace live_production {
 
 class ModuleRuntime;
+class AllSourcesPublisher;
 
 class PublisherDialog final : public QDialog {
 public:
   PublisherDialog(QWidget *parent, ModuleRuntime &runtime);
+  ~PublisherDialog() override;
 
 private:
   void select_bundle();
@@ -24,6 +27,10 @@ private:
   void refresh();
 
   ModuleRuntime &runtime_;
+  std::unique_ptr<AllSourcesPublisher> all_sources_;
+  QLabel *all_status_ = nullptr;
+  QPushButton *all_start_ = nullptr;
+  QPushButton *all_stop_ = nullptr;
   QLineEdit *bundle_path_ = nullptr;
   QPushButton *select_button_ = nullptr;
   QLabel *source_value_ = nullptr;

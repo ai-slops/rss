@@ -211,6 +211,7 @@ int main(int argc, char **argv) {
     }
     config.obs.source_name = command.source_name;
     config.obs.audio_mix_index = 0;
+    config.obs.source_audio = true;
     config.target.host = "127.0.0.1";
     config.target.port = receiver_publisher.port();
     config.target.passphrase = "fixtureCredential42";

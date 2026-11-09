@@ -6,11 +6,14 @@
 
 #include <functional>
 #include <mutex>
+#include <memory>
 #include <cstdint>
 #include <optional>
 #include <string>
 
 namespace live_production {
+
+class SourceAudio;
 
 class Publisher {
 public:
@@ -47,6 +50,7 @@ private:
   std::string state_ = "created";
   std::string last_error_;
   obs_source_t *source_ = nullptr;
+  std::unique_ptr<SourceAudio> source_audio_;
   obs_view_t *view_ = nullptr;
   video_t *video_ = nullptr;
   obs_encoder_t *video_encoder_ = nullptr;

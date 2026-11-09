@@ -54,6 +54,7 @@ add_library(obs-live-production MODULE
   src/fixture_source.cpp
   src/fixture_state.cpp
   src/frontend.cpp
+  src/all_sources.cpp
   src/frontend_dialog.cpp
   src/live_muxer.cpp
   src/live_packet.cpp
@@ -65,6 +66,7 @@ add_library(obs-live-production MODULE
   src/module_runtime_poll.cpp
   src/plugin.cpp
   src/publisher.cpp
+  src/source_audio.cpp
   src/publisher_runtime.cpp
   src/recovery_action.cpp
   src/recovery_client.cpp
@@ -116,7 +118,7 @@ if(BUILD_TESTING AND NOT WIN32)
   add_executable(obs-live-production-live-output-test
     tests/live_output_test.cpp tests/live_test_decode.cpp tests/live_test_output.cpp
     tests/live_test_receiver.cpp
-    src/fixture_source.cpp src/publisher.cpp src/live_muxer.cpp src/live_packet.cpp src/live_queue.cpp
+    src/fixture_source.cpp src/publisher.cpp src/source_audio.cpp src/live_muxer.cpp src/live_packet.cpp src/live_queue.cpp
     src/live_srt_output.cpp src/live_srt_transport.cpp)
   target_compile_features(obs-live-production-live-output-test PRIVATE cxx_std_17)
   target_compile_options(obs-live-production-live-output-test PRIVATE
@@ -297,6 +299,7 @@ if(BUILD_TESTING AND NOT WIN32)
     src/module_runtime_actions.cpp
     src/module_runtime_poll.cpp
     src/publisher.cpp
+  src/source_audio.cpp
     src/publisher_runtime.cpp
     src/recovery_action.cpp
     src/recovery_client.cpp

@@ -1,4 +1,5 @@
 #include "frontend_dialog.hpp"
+#include "all_sources.hpp"
 
 #include "config.hpp"
 #include "module_runtime.hpp"
@@ -43,6 +44,22 @@ PublisherDialog::PublisherDialog(QWidget *parent, ModuleRuntime &runtime)
   auto *intro = new QLabel(text("Dialog.Intro"), this);
   intro->setWordWrap(true);
   layout->addWidget(intro);
+  all_sources_ = std::make_unique<AllSourcesPublisher>();
+  auto *all_group = new QGroupBox("Individual OBS sources", this);
+  auto *all_layout = new QVBoxLayout(all_group);
+  all_start_ = new QPushButton("Send all individual OBS sources…", all_group);
+  all_stop_ = new QPushButton("Stop all individual sources", all_group);
+  all_status_ = new QLabel("Each input is sent separately; arrange and mix them in the web studio.", all_group);
+  all_status_->setWordWrap(true);
+  all_layout->addWidget(all_start_); all_layout->addWidget(all_stop_); all_layout->addWidget(all_status_);
+  layout->addWidget(all_group);
+  connect(all_start_, &QPushButton::clicked, this, [this] {
+    const QString path = QFileDialog::getOpenFileName(this, "Select private server connection file", {}, "JSON (*.json)");
+    if (path.isEmpty()) return;
+    std::string failure; runtime_.manual_stop(failure);
+    QString error; all_sources_->start(path, error); refresh();
+  });
+  connect(all_stop_, &QPushButton::clicked, this, [this] { all_sources_->stop(); refresh(); });
   auto *bundle_row = new QHBoxLayout();
   bundle_path_ = new QLineEdit(this);
   bundle_path_->setReadOnly(true);
@@ -95,6 +112,8 @@ PublisherDialog::PublisherDialog(QWidget *parent, ModuleRuntime &runtime)
   refresh();
 }
 
+PublisherDialog::~PublisherDialog() = default;
+
 void PublisherDialog::select_bundle() {
   const QString path = QFileDialog::getOpenFileName(
       this, text("Bundle.DialogTitle"), {}, text("Bundle.Filter"));
@@ -123,6 +142,9 @@ void PublisherDialog::stop_publisher() {
 }
 
 void PublisherDialog::refresh() {
+  all_status_->setText(all_sources_->status());
+  all_start_->setEnabled(!all_sources_->active());
+  all_stop_->setEnabled(all_sources_->active());
   const ModuleRuntimeSnapshot snapshot = runtime_.snapshot();
   bundle_path_->setText(QString::fromStdString(snapshot.bundle_path));
   state_value_->setText(display_state(snapshot.publisher_state));

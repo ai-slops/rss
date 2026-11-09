@@ -21,6 +21,8 @@ fn pipeline_description() -> Result<String> {
      program_video. ! queue max-size-buffers=2 leaky=downstream ! fakesink sync=false \
      audiomixer name=program_mixer force-live=true ! audio/x-raw,format=S16LE,rate=48000,channels=2 ! tee name=program_audio \
      program_audio. ! queue max-size-time=200000000 leaky=downstream ! interaudiosink name=program_audio_tap channel=live-{engine_run_id}-program-audio-v1 sync=false async=false \
+     program_audio. ! queue max-size-time=200000000 leaky=downstream ! interaudiosink channel=live-{engine_run_id}-program-monitor-audio-v1 sync=false async=false \
+     program_audio. ! queue max-size-time=200000000 leaky=downstream ! interaudiosink channel=live-{engine_run_id}-program-recording-audio-v1 sync=false async=false \
      program_audio. ! queue max-size-time=200000000 leaky=downstream ! fakesink sync=false"
         .replace("width=960,height=540,framerate=30/1", &format!("width={},height={},framerate={}/1", canvas.width, canvas.height, canvas.fps_numerator)))
 }

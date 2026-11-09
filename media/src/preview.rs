@@ -201,7 +201,7 @@ fn video_pipeline(engine_run_id: &EngineRunId, name: &str, port: u16) -> String 
     let channel = TapChannels::preview(engine_run_id);
     format!(
         "intervideosrc channel={channel} timeout=500000000 ! queue max-size-buffers=1 leaky=downstream ! \
-         videoconvert ! video/x-raw,format=I420,width=960,height=540,framerate=30/1 ! \
+         videoconvert ! videoscale ! videorate skip-to-first=true ! video/x-raw,format=I420,width=960,height=540,framerate=30/1 ! \
          webrtcsink name={name}_webrtc run-signalling-server=true signalling-server-host=127.0.0.1 \
          signalling-server-port={port} congestion-control=disabled do-fec=false \
          video-caps=video/x-vp8 meta=meta,name={name}"
@@ -215,15 +215,16 @@ fn program_pipeline(engine_run_id: &EngineRunId, port: u16) -> String {
          signalling-server-port={port} video-caps=video/x-vp8 audio-caps=audio/x-opus \
          congestion-control=disabled do-fec=false meta=meta,name=program \
          intervideosrc channel={} timeout=500000000 ! queue max-size-buffers=1 leaky=downstream ! \
-         videoconvert ! video/x-raw,format=I420,width=960,height=540,framerate=30/1 ! program_webrtc.video_0 \
+         videoconvert ! videoscale ! videorate skip-to-first=true ! video/x-raw,format=I420,width=960,height=540,framerate=30/1 ! program_webrtc.video_0 \
          interaudiosrc channel={} ! queue max-size-time=200000000 leaky=downstream ! \
          audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! program_webrtc.audio_0",
-        channels.video, channels.audio
+        channels.video,
+        TapChannels::program_monitor_audio(engine_run_id)
     )
 }
 
 fn audio_pipeline(engine_run_id: &EngineRunId, track_id: &TrackId, port: u16) -> String {
-    let channel = TapChannels::source_audio(engine_run_id, track_id);
+    let channel = TapChannels::source_monitor_audio(engine_run_id, track_id);
     let name = format!("source-{}", track_id.as_str());
     format!(
         "interaudiosrc channel={channel} ! queue max-size-time=200000000 leaky=downstream ! \
@@ -255,8 +256,8 @@ mod tests {
         // Then
         assert!(preview.contains("channel=live-engine-run-a-preview-video-v1"));
         assert!(program.contains("channel=live-engine-run-a-program-video-v1"));
-        assert!(program.contains("channel=live-engine-run-a-program-audio-v1"));
-        assert!(source.contains("channel=live-engine-run-a-source-audio-v1-camera-audio"));
+        assert!(program.contains("channel=live-engine-run-a-program-monitor-audio-v1"));
+        assert!(source.contains("channel=live-engine-run-a-source-monitor-audio-v1-camera-audio"));
         Ok(())
     }
 

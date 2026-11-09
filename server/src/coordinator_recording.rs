@@ -69,9 +69,11 @@ impl Owner {
                 self.automatic_recording_connected.remove(&output.id);
             }
             if was_connected && !connected {
-                let _ = self.outputs.stop(&id);
+                let _ = self.outputs.stop_async(&id);
                 let _ = self.refresh_recordings(&output.id);
                 self.automatic_recording_retry.remove(&output.id);
+                self.refresh_output(&output.id);
+                continue;
             }
             let needs_start = self.outputs.snapshot(&id).map_or(true, |status| {
                 matches!(

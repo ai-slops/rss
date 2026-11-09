@@ -24,7 +24,7 @@ pub(crate) fn register(request: crate::plugins_factories::OutputFactoryRequest<'
         OutputAdapter::ProgramRecording { segment_seconds } => OutputDefinition::Recording(
             RecordingDefinition::new(
                 id,
-                program_tap(engine_run_id)?,
+                program_recording_tap(engine_run_id)?,
                 &state_directory.join("recordings").join(&output.id.0),
                 Duration::from_secs(u64::from(*segment_seconds)),
             )
@@ -100,4 +100,13 @@ fn invalid(error: live_production_media::output::OutputError) -> AppError {
 
 fn unavailable(error: live_production_media::output::OutputError) -> AppError {
     AppError::Unavailable(error.to_string())
+}
+
+fn program_recording_tap(run: &live_production_media::protocol::EngineRunId) -> Result<MediaTap> {
+    let channels = live_production_media::tap::TapChannels::program(run);
+    MediaTap::new(
+        &channels.video,
+        &live_production_media::tap::TapChannels::program_recording_audio(run),
+    )
+    .map_err(invalid)
 }

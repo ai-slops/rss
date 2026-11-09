@@ -72,6 +72,20 @@ impl OutputManager {
         self.request(id, OwnerCommand::stop)
     }
 
+    /// Queue recording finalization without blocking the control coordinator.
+    pub fn stop_async(&self, id: &OutputId) -> Result<(), OutputError> {
+        let sender = self.sender(id)?;
+        let (reply, _) = mpsc::sync_channel(1);
+        let shared = self.shared(id)?;
+        let mut state = shared.lock().map_err(|_| OutputError::OwnerStopped)?;
+        state.snapshot.actual = crate::output::OutputState::Finalizing;
+        state.snapshot.desired = crate::output::OutputState::Stopped;
+        drop(state);
+        sender
+            .send(OwnerCommand::Stop(reply))
+            .map_err(|_| OutputError::OwnerStopped)
+    }
+
     pub fn snapshot(&self, id: &OutputId) -> Result<OutputSnapshot, OutputError> {
         let shared = self.shared(id)?;
         let snapshot = shared

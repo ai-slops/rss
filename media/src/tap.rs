@@ -67,6 +67,25 @@ impl TapChannels {
         }
     }
 
+    #[must_use]
+    pub fn program_monitor_audio(run: &EngineRunId) -> String {
+        format!("live-{}-program-monitor-audio-v1", run.as_str())
+    }
+
+    #[must_use]
+    pub fn program_recording_audio(run: &EngineRunId) -> String {
+        format!("live-{}-program-recording-audio-v1", run.as_str())
+    }
+
+    #[must_use]
+    pub fn source_monitor_audio(run: &EngineRunId, track: &TrackId) -> String {
+        format!(
+            "live-{}-source-monitor-audio-v1-{}",
+            run.as_str(),
+            track.as_str()
+        )
+    }
+
     fn pair(engine_run_id: &EngineRunId, kind: &str, suffix: Option<&str>) -> Self {
         let suffix = suffix.map_or(String::new(), |value| format!("-{value}"));
         Self {

@@ -79,7 +79,7 @@ mod editor_clean_provenance_support;
 #[tokio::test]
 async fn idle_input_stays_armed_and_reconnect_finalizes_separate_sessions() {
     use common::Harness;
-    use editor_clean_provenance_support::{free_udp_port, get_json, srt_sender};
+    use editor_clean_provenance_support::{free_udp_port, get_json, srt_sender_at_fps};
     use gstreamer::{self as gst, prelude::*};
 
     gst::init().unwrap();
@@ -101,14 +101,33 @@ async fn idle_input_stays_armed_and_reconnect_finalizes_separate_sessions() {
         &format!("/api/v1/sources/{source_id}/publishing-endpoint"),
     )
     .await;
+    let audio_track = configured["project"]["sources"][0]["tracks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|track| track["kind"] == "audio")
+        .unwrap()["id"]
+        .clone();
+    let routed = harness.command(&cookie, json!({
+        "id":"auto-audio-route", "kind":"audio.apply", "targetId": initial["project"]["id"],
+        "expectedEngineRunId": initial["engineRunId"], "payload":{"routes":[{"trackId":audio_track,"gainDb":0,"muted":false,"routed":true}]}
+    })).await;
+    assert_eq!(routed["status"], "applied", "{routed}");
     tokio::time::sleep(Duration::from_secs(6)).await;
     let idle = harness.snapshot(&cookie).await;
     assert_eq!(idle["outputStatuses"][0]["desired"], "running");
     assert_ne!(idle["outputStatuses"][0]["actual"], "failed");
     for _ in 0..2 {
-        let sender = srt_sender(port, endpoint["passphrase"].as_str().unwrap());
+        let sender = srt_sender_at_fps(port, endpoint["passphrase"].as_str().unwrap(), 60);
         sender.set_state(gst::State::Playing).unwrap();
         tokio::time::sleep(Duration::from_secs(4)).await;
+        let audible = harness.snapshot(&cookie).await;
+        assert!(
+            audible["project"]["audioRoutes"][0]["inputPeakDb"]
+                .as_f64()
+                .is_some_and(|level| level > -60.0),
+            "live Program route must contain the received source audio: {audible}"
+        );
         sender.set_state(gst::State::Null).unwrap();
         // No browser polling while the server detects loss and closes the file.
         tokio::time::sleep(Duration::from_secs(3)).await;
@@ -152,6 +171,11 @@ async fn idle_input_stays_armed_and_reconnect_finalizes_separate_sessions() {
         stop["status"], "applied",
         "automatic capture must stay enabled"
     );
+    let unrouted = harness.command(&cookie, json!({
+        "id":"auto-audio-unroute", "kind":"audio.apply", "targetId": initial["project"]["id"],
+        "expectedEngineRunId": initial["engineRunId"], "payload":{"routes":[]}
+    })).await;
+    assert_eq!(unrouted["status"], "applied", "{unrouted}");
     let files = recording_files(harness._directory.path());
     let deleted = harness
         .command(

@@ -134,9 +134,9 @@ impl SourceRuntime {
         pipeline
             .add(&bin)
             .map_err(|error| format!("attach source '{}': {error}", spec.id.as_str()))?;
+        let audio_mix = AudioMixRuntime::build(pipeline, &spec, engine_run_id)?;
         bin.sync_state_with_parent()
             .map_err(|error| format!("start source '{}': {error}", spec.id.as_str()))?;
-        let audio_mix = AudioMixRuntime::build(pipeline, &spec, engine_run_id)?;
         let srt_listener_name = matches!(&spec.kind, SourceKind::SrtListener { .. })
             .then(|| names.srt_listener.clone());
         Ok(Self {
@@ -198,9 +198,9 @@ impl SourceRuntime {
     ) -> SourceSnapshot {
         self.generation = self.current_generation();
         let last_activity = self
-            .video_progress
+            .video_ingest_progress
             .last_activity_ns()
-            .max(self.audio_progress.last_activity_ns());
+            .max(self.audio_ingest_progress.last_activity_ns());
         let connected =
             last_activity != 0 && wall_now.value().saturating_sub(last_activity) <= 2_000_000_000;
         if connected && !self.was_connected {

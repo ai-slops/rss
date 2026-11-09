@@ -35,6 +35,29 @@ impl Owner {
                 "Confirm that sending media may start a public broadcast.".into(),
             ));
         }
+        let limited_adapter = matches!(
+            output.adapter,
+            OutputAdapter::Rtmps { .. } | OutputAdapter::ProgramRecording { .. }
+        );
+        if limited_adapter
+            && self.output_statuses.iter().any(|status| {
+                status.output_id != command.target_id
+                    && status.desired == DesiredState::Running
+                    && self.project.outputs.iter().any(|other| {
+                        other.id == status.output_id
+                            && matches!(
+                                (&output.adapter, &other.adapter),
+                                (OutputAdapter::Rtmps { .. }, OutputAdapter::Rtmps { .. })
+                                    | (
+                                        OutputAdapter::ProgramRecording { .. },
+                                        OutputAdapter::ProgramRecording { .. }
+                                    )
+                            )
+                    })
+            })
+        {
+            return Err(AppError::Conflict("Only one platform destination and one Program recorder can run at a time in this live profile. Stop the current output before starting another.".into()));
+        }
         let id = media_output_id(&command.target_id)?;
         let (_, _, clock) = self.media.runtime_snapshot()?;
         self.outputs

@@ -149,7 +149,7 @@ fn apply_track_status(
     };
     let buffered_ns = match track.kind {
         TrackKind::Video => {
-            track.format = "video/x-raw 1280x720 30 fps";
+            track.format = "video/x-raw (independent input)";
             status.video_buffered_ns.value()
         }
         TrackKind::Audio => {

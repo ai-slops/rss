@@ -146,8 +146,8 @@ fn decode(path: &Path) -> Result<(), OutputError> {
     let location = quote_path(path)?;
     let pipeline = gst::parse::launch(&format!(
         "filesrc location={location} ! matroskademux name=demux \
-         demux. ! queue ! decodebin ! fakesink sync=false \
-         demux. ! queue ! decodebin ! fakesink sync=false"
+         demux. ! queue ! decodebin ! fakesink sync=false async=false \
+         demux. ! queue ! decodebin ! fakesink sync=false async=false"
     ))
     .map_err(|_| OutputError::RecordingFinalization)?
     .downcast::<gst::Pipeline>()
@@ -159,8 +159,8 @@ fn packet_bounds(path: &Path) -> Result<PacketBounds, OutputError> {
     let location = quote_path(path)?;
     let pipeline = gst::parse::launch(&format!(
         "filesrc location={location} ! matroskademux name=demux \
-         demux. ! queue ! h264parse ! identity name=video_probe ! fakesink sync=false \
-         demux. ! queue ! aacparse ! identity name=audio_probe ! fakesink sync=false"
+         demux. ! queue ! h264parse ! identity name=video_probe ! fakesink sync=false async=false \
+         demux. ! queue ! aacparse ! identity name=audio_probe ! fakesink sync=false async=false"
     ))
     .map_err(|_| OutputError::RecordingFinalization)?
     .downcast::<gst::Pipeline>()

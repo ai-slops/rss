@@ -44,8 +44,9 @@ pub fn source_description(
 ) -> String {
     let clean = TapChannels::clean(engine_run_id, &spec.video_track_id, &spec.audio_track_id);
     let source = TapChannels::source(engine_run_id, &spec.video_track_id, &spec.audio_track_id);
+    let (width, height, _) = source_video_format();
     let video_tail = format!(
-        "videoconvert ! videoscale ! video/x-raw,format=I420,width=1280,height=720,framerate=30/1 ! identity name={} ! tee name=raw_video raw_video. ! queue max-size-buffers=2 leaky=downstream ! intervideosink channel={} sync=false async=false raw_video. ! queue name={} max-size-bytes=0 max-size-buffers=0 max-size-time={MAXIMUM_HISTORY_NS} ! identity name={} ! clocksync name={} sync=true ! tee name={} {}. ! queue max-size-buffers=2 leaky=downstream ! intervideosink channel={} sync=false async=false",
+        "videoconvert ! videoscale ! video/x-raw,format=I420,width={width},height={height} ! identity name={} ! tee name=raw_video raw_video. ! queue max-size-buffers=2 leaky=downstream ! intervideosink channel={} sync=false async=false raw_video. ! queue name={} max-size-bytes=0 max-size-buffers=0 max-size-time={MAXIMUM_HISTORY_NS} ! identity name={} ! clocksync name={} sync=true ! tee name={} {}. ! queue max-size-buffers=2 leaky=downstream ! intervideosink channel={} sync=false async=false",
         names.video_ingest,
         quote(&clean.video),
         names.video_history,
@@ -56,7 +57,7 @@ pub fn source_description(
         quote(&source.video),
     );
     let audio_tail = format!(
-        "audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate=48000,channels=2 ! identity name={} ! tee name=raw_audio raw_audio. ! queue max-size-buffers=8 leaky=downstream ! interaudiosink channel={} sync=false async=false raw_audio. ! queue name={} max-size-bytes=0 max-size-buffers=0 max-size-time={MAXIMUM_HISTORY_NS} ! identity name={} ! clocksync name={} sync=true ! tee name={} {}. ! queue max-size-buffers=8 leaky=downstream ! interaudiosink channel={} sync=false async=false",
+        "audioconvert ! audioresample ! audio/x-raw,format=S16LE,rate=48000,channels=2 ! identity name={} ! tee name=raw_audio raw_audio. ! queue max-size-buffers=8 leaky=downstream ! interaudiosink channel={} sync=false async=false raw_audio. ! queue name={} max-size-bytes=0 max-size-buffers=0 max-size-time={MAXIMUM_HISTORY_NS} ! identity name={} ! clocksync name={} sync=true ! tee name={} {}. ! queue max-size-buffers=8 leaky=downstream ! interaudiosink channel={} sync=false async=false {}. ! queue max-size-buffers=8 leaky=downstream ! interaudiosink channel={} sync=false async=false",
         names.audio_ingest,
         quote(&clean.audio),
         names.audio_history,
@@ -65,6 +66,11 @@ pub fn source_description(
         names.audio_tee,
         names.audio_tee,
         quote(&source.audio),
+        names.audio_tee,
+        quote(&TapChannels::source_monitor_audio(
+            engine_run_id,
+            &spec.audio_track_id
+        )),
     );
     match &spec.kind {
         SourceKind::Synthetic {
@@ -176,4 +182,19 @@ mod tests {
         assert_eq!(description.matches("max-size-time=4000000000").count(), 2);
         Ok(())
     }
+}
+
+pub fn source_video_format() -> (u32, u32, u32) {
+    fn setting(name: &str, default: u32, maximum: u32) -> u32 {
+        std::env::var(name)
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .filter(|value| *value > 0 && *value <= maximum)
+            .unwrap_or(default)
+    }
+    (
+        setting("LIVE_PRODUCTION_VIDEO_WIDTH", 1280, 3840),
+        setting("LIVE_PRODUCTION_VIDEO_HEIGHT", 720, 2160),
+        setting("LIVE_PRODUCTION_VIDEO_FPS", 30, 60),
+    )
 }

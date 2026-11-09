@@ -108,6 +108,10 @@ pub fn install(
                     if let Ok(mut value) = state.lock() {
                         value.segment_pending = true;
                     }
+                    // Buffers below are rewritten into the engine clock domain.
+                    // Keep downstream running-time conversion in that same domain.
+                    let segment = gst::FormattedSegment::<gst::ClockTime>::new();
+                    info.data = Some(gst::PadProbeData::Event(gst::event::Segment::new(&segment)));
                     return gst::PadProbeReturn::Ok;
                 }
                 let Some(buffer) = info.buffer_mut() else {

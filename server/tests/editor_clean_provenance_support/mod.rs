@@ -158,5 +158,9 @@ pub fn free_udp_port() -> u16 {
         .port()
 }
 pub fn srt_sender(port: u16, passphrase: &str) -> gst::Pipeline {
-    gst::parse::launch(&format!("mpegtsmux name=mux alignment=7 ! srtsink uri=\"srt://127.0.0.1:{port}?mode=caller&passphrase={passphrase}&pbkeylen=16\" wait-for-connection=true videotestsrc is-live=true pattern=ball ! video/x-raw,width=640,height=360,framerate=30/1 ! videoconvert ! x264enc tune=zerolatency key-int-max=30 bitrate=1000 ! h264parse config-interval=-1 ! mux. audiotestsrc is-live=true wave=ticks ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=128000 ! aacparse ! mux.")).expect("sender").downcast::<gst::Pipeline>().expect("pipeline")
+    srt_sender_at_fps(port, passphrase, 30)
+}
+
+pub fn srt_sender_at_fps(port: u16, passphrase: &str, fps: u32) -> gst::Pipeline {
+    gst::parse::launch(&format!("mpegtsmux name=mux alignment=7 ! srtsink uri=\"srt://127.0.0.1:{port}?mode=caller&passphrase={passphrase}&pbkeylen=16\" wait-for-connection=true videotestsrc is-live=true pattern=ball ! video/x-raw,width=640,height=360,framerate={fps}/1 ! videoconvert ! x264enc tune=zerolatency key-int-max=30 bitrate=1000 ! h264parse config-interval=-1 ! mux. audiotestsrc is-live=true wave=sine ! audioconvert ! audioresample ! audio/x-raw,rate=48000,channels=2 ! voaacenc bitrate=128000 ! aacparse ! mux.")).expect("sender").downcast::<gst::Pipeline>().expect("pipeline")
 }

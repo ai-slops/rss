@@ -41,7 +41,7 @@ export function OutputsPanel({ snapshot, disabled, onCommand }: OutputsPanelProp
   return (
     <Panel scope="LIVE / SHARED" title="Outputs and recording">
       <p>Every input is recorded automatically before Program timing and composition. Recordings remain on the server for editing.</p>
-      <p>Network output: 1920 × 1080 · 60 FPS · H.264 CBR 8000 kbps · keyframes every 1 second · AAC 128 kbps.</p>
+      <p>Network output: 1920 × 1080 · 60 FPS · H.264 CBR 8000 kbps · keyframes every 1 second · AAC 128 kbps. One platform at a time.</p>
       <Field label="Streaming platform" hint="Each destination sends the same Program picture and audio.">
         <select disabled={disabled || provisioning} value={destinationName} onChange={(event) => setDestinationName(event.currentTarget.value)}>
           <option>YouTube</option><option>CHZZK</option><option>SOOP</option><option>Custom RTMP</option>

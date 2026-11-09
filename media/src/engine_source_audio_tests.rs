@@ -127,3 +127,77 @@ fn unapproved_new_audio_is_physically_silent_until_explicitly_routed() -> anyhow
     );
     Ok(())
 }
+
+#[test]
+fn direct_source_mix_delivers_continuous_pcm_with_program_holdback() -> anyhow::Result<()> {
+    use crate::{
+        engine_source_runtime::{SourceBuild, SourceBuildContext, SourceRuntime},
+        source_capture::SourceCaptureRegistry,
+    };
+    gst::init()?;
+    let run = EngineRunId::new(&uuid::Uuid::now_v7().to_string())?;
+    let port = std::net::UdpSocket::bind("127.0.0.1:0")?
+        .local_addr()?
+        .port();
+    let sender = gst::parse::launch(&format!("mpegtsmux name=mux alignment=7 ! srtsink uri=\"srt://127.0.0.1:{port}?mode=caller&passphrase=ContinuousTest123&pbkeylen=16\" wait-for-connection=true videotestsrc is-live=true ! video/x-raw,width=320,height=180,framerate=60/1 ! x264enc tune=zerolatency ! h264parse ! mux. audiotestsrc is-live=true freq=440 ! audio/x-raw,rate=48000,channels=2 ! voaacenc ! aacparse ! mux."))?.downcast::<gst::Pipeline>().map_err(|_| anyhow::anyhow!("sender"))?;
+    let spec = SourceSpec {
+        id: SourceId::new("continuous")?,
+        video_track_id: TrackId::new("continuous-video")?,
+        audio_track_id: TrackId::new("continuous-audio")?,
+        kind: SourceKind::SrtListener {
+            bind_address: "127.0.0.1".into(),
+            port,
+            latency: crate::protocol::Milliseconds::new(120),
+            passphrase: "ContinuousTest123".into(),
+        },
+    };
+    let master = gst::parse::launch("audiomixer name=program_mixer force-live=true ! audio/x-raw,format=S16LE,rate=48000,channels=2 ! appsink name=master max-buffers=64 drop=true sync=false")?.downcast::<gst::Pipeline>().map_err(|_| anyhow::anyhow!("master"))?;
+    let captures = SourceCaptureRegistry::default();
+    master.set_state(gst::State::Playing)?;
+    let result = (|| -> anyhow::Result<()> {
+        let runtime = SourceRuntime::build(
+            &SourceBuildContext {
+                pipeline: &master,
+                engine_run_id: &run,
+                source_captures: &captures,
+            },
+            SourceBuild {
+                spec,
+                generation: 1,
+                gaps: vec![],
+            },
+        )
+        .map_err(anyhow::Error::msg)?;
+        sender.set_state(gst::State::Playing)?;
+        runtime.audio_timing_control.set_offset(500_000_000);
+        runtime
+            .audio_mix
+            .as_ref()
+            .context("direct route")?
+            .mixer_pad
+            .set_property("mute", false);
+        let sink = master
+            .by_name("master")
+            .context("sink")?
+            .downcast::<AppSink>()
+            .map_err(|_| anyhow::anyhow!("sink type"))?;
+        let mut silent = 0;
+        for i in 0..300 {
+            let sample = sink
+                .try_pull_sample(gst::ClockTime::from_seconds(2))
+                .context("PCM sample")?;
+            if i >= 100 && peak(sample.buffer().context("PCM")?)? < 100 {
+                silent += 1;
+            }
+        }
+        runtime.detach(&master).map_err(anyhow::Error::msg)?;
+        anyhow::ensure!(
+            silent < 5,
+            "Program contained {silent}/200 silent audio blocks after warmup"
+        );
+        Ok(())
+    })();
+    sender.set_state(gst::State::Null)?;
+    master.set_state(gst::State::Null)?;
+    result
+}

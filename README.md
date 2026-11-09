@@ -6,9 +6,9 @@ Implementation baseline: [handoff](docs/implementation-handoff.md).
 
 ## Development
 
-This is a standalone product, not a DIM feature. Development is in progress; the [evidence ledger](docs/acceptance.md) distinguishes measured software paths from remaining gates. Do not use an unchecked gate as authorization for a public broadcast.
+Run verification against the source and target environment you intend to use. Test results belong in CI logs and ignored `var/` artifacts, rather than committed execution receipts.
 
-On this assigned Alpine/musl workspace, run:
+For project-local Alpine/musl development dependencies, run:
 
 ```sh
 ./scripts/dev.sh
@@ -36,13 +36,17 @@ Native preview/test process ownership and the repeated-run regression are docume
 ./scripts/acceptance.sh          # also actual media, network, browser and extension gates
 ```
 
-Full acceptance fails if a required gate is absent. Reports and generated fixtures stay under `var/`; the latest command report is `var/acceptance/latest.txt`. [Stage A evidence](docs/stage-a.md) records the exact measured codec profile and limits. A software fixture is not proof of hardware 1080p60/4K capacity, OBS track separation, target-laptop ICE, platform semantics or editor interoperability.
+Full acceptance fails if a required gate is absent. Reports and generated fixtures stay under `var/`; the latest command report is `var/acceptance/latest.txt`. [Media architecture](docs/stage-a.md) describes the media boundary and test entrypoints. A software fixture is not proof of hardware 1080p60/4K capacity, OBS track separation, target-laptop ICE, platform semantics or editor interoperability.
 
-Workspace Rust tests include a three-minute native drift/timing/recording regression even with `--quick`; that flag skips standalone CLI/browser gates, not the Rust endurance contract. Full acceptance additionally requires an actual supervised SIGKILL/restart recording-recovery gate. [Internal gate evidence](docs/internal-gates-2026-10-27.md) records the measured results. When a studio must stay running, validate in a separate checkout/target and separate web output directory: the normal development build must not replace its executable or served bundle implicitly.
+Workspace Rust tests include a three-minute native drift/timing/recording regression even with `--quick`; that flag skips standalone CLI/browser gates, not the Rust endurance contract. Full acceptance additionally requires an actual supervised SIGKILL/restart recording-recovery gate. When a studio must stay running, validate in a separate checkout/target and separate web output directory: the normal development build must not replace its executable or served bundle implicitly.
 
 ## Dependencies and Ubuntu deployment
 
-The measured development toolchain is Rust/Cargo 1.91.1, GStreamer 1.26.9, FFmpeg 8.0.1, GCC 15.2.0, official Rust GStreamer bindings and locked React/TypeScript dependencies. `scripts/bootstrap.sh` pins native packages and installs them only under `.tools/`; `scripts/env.sh` activates them. See [the local-musl ADR](docs/adr-001-local-musl-toolchain.md). Rust and npm transitive dependencies are locked in `Cargo.lock` and `web/package-lock.json`.
+Rust and npm dependencies are locked in `Cargo.lock` and `web/package-lock.json`.
+The Ubuntu verification scripts select Rust/Cargo 1.91.1 and native libraries.
+For project-local Alpine dependencies, `scripts/bootstrap.sh` installs under
+`.tools/` and `scripts/env.sh` activates them; see the
+[local-musl ADR](docs/adr-001-local-musl-toolchain.md).
 
 On Ubuntu, have the deployment administrator supply Rust/Cargo, a C compiler, pkg-config, SQLite build prerequisites, FFmpeg, GStreamer development libraries and the base/good/bad/ugly/libav plugin sets. Required capabilities include compositor, audiomixer, H.264 CPU encoding, AAC, MPEG-TS, Matroska/splitmux, SRT and RTMPS; WebRTC additionally needs the Rust rswebrtc plugin and working ICE dependencies. Use native Ubuntu packages/libraries, not the Alpine sysroot. Build locked dependencies and rerun acceptance on the actual target before relying on performance. Hardware encoding is not assumed.
 
@@ -81,10 +85,44 @@ Run the daemon as an unprivileged service account with write access only to its 
 
 Recorders now persist session metadata before capture and publish only confirmed closed fragments. Startup inventories raw MKVs even without a valid catalog, preserves raw bytes, and reports recovered/partial, decode validation, mapping and interruption gaps separately. Unknown wall/engine timing is labelled unknown. Clean-source generation intervals come from captured video/audio metadata, not the current connection. Restored outputs remain stopped; recovery never authorizes a public transmission.
 
-An administrator-reviewed Ubuntu service example is provided in `deploy/live-production.service`. It assumes a pre-created unprivileged account, a release build under `/opt/live-production`, native deployment dependencies and an authenticated HTTPS reverse proxy. It is not installed automatically, and the Ubuntu service/hardware profile remains unverified until exercised there.
+An Ubuntu service example is provided in `deploy/live-production.service`. It assumes a pre-created unprivileged account, a release build under `/opt/live-production`, native deployment dependencies and an authenticated HTTPS reverse proxy. It is not installed automatically, and the Ubuntu service/hardware profile remains unverified until exercised there.
 
-In this workspace the development daemon is registered as the single `studio` service through the existing `dim-workspace service` integration, using `scripts/serve.sh`, loopback port `3100` and secure cookies. `dim-workspace service list` reports its process status; that status is not evidence of media progress. The verified shared-ingress development route is **https://live-production--studio-6d4ac2cc57021bab.mj-y.com/**. `node scripts/control-smoke.mjs` verifies private control behavior; set `LIVE_PRODUCTION_URL` to that HTTPS origin when testing ingress. Reading the generated operator credential remains a private local action.
+For a container with HTTPS, persistent state and router-forwarded SRT/WebRTC UDP,
+see the [container deployment instructions](deploy/README.md). Sender access does
+not require Tailscale.
 
-The daemon holds an operating-system lock on its state directory so a second process cannot silently create another authoritative coordinator for the same SQLite project. Stop the managed service before starting another daemon against that directory; isolated acceptance runs use separate state directories.
+## Native OBS and VM verification
 
-Do not automatically merge/deploy the work branch. Remaining target-system gates and final evidence belong in [the acceptance ledger](docs/acceptance.md).
+The OBS plugin's build, installation and publisher workflow are documented in
+[integrations/obs-live-production](integrations/obs-live-production/README.md).
+The server needs a UDP SRT endpoint reachable from the sender in addition to its
+HTTPS control URL.
+
+On a dedicated Ubuntu 24.04 host with Rust 1.91.1 installed:
+
+```sh
+bash scripts/ubuntu-dependencies.sh
+bash scripts/ubuntu-obs-check.sh
+```
+
+The [Native OBS workflow](.github/workflows/native-obs.yml) runs the same checks
+when manually started in GitHub Actions.
+
+For a dedicated KVM guest on Linux, install QEMU, cloud-image-utils, OpenSSH,
+Node and curl, then run:
+
+```sh
+bash scripts/ubuntu-verify.sh run
+```
+
+The runner downloads and checks an official Ubuntu cloud image, snapshots the
+current working source (including tracked edits), and owns the VM until completion.
+It builds the plugin, runs real OBS SRT/decoded-audio/video and recovery checks,
+and runs the software checks. Logs and credentials remain under ignored `var/`;
+the VM is stopped on completion or interruption. Use a fresh state directory for
+an independent run. These software checks do not establish external UDP reachability
+or compatibility with an unspecified sender OS and OBS version.
+
+The daemon holds an operating-system lock on its state directory. Use a separate
+state directory for verification rather than starting a second coordinator against
+an active project.

@@ -1,0 +1,11 @@
+{
+	admin off
+	auto_https disable_redirects
+	default_sni {$LIVE_TLS_DEFAULT_NAME}
+	skip_install_trust
+}
+
+{$LIVE_HTTPS_NAMES} {
+	tls internal
+	reverse_proxy server:3000
+}
